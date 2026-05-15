@@ -54,16 +54,51 @@ Resolver el issue en Sentry cierra el incident en DevLake automáticamente (MTTR
 
 ---
 
-## 4. Etiquetado de PRs asistidos por IA
+## 4. Tracking de adopción de IA por proyecto
 
-Para medir el impacto de IA en productividad, usar labels en los PRs:
+**No usamos labels de PR.** Los labels manuales se degradan rápido en la práctica
+(devs olvidan, son inconsistentes entre personas, sesgan a posteriori). En vez de
+eso, medimos **por cohortes temporales**:
 
-- `ai-assisted` — el PR fue producido con asistencia significativa de Claude Code,
-  Copilot u otra IA generativa de código.
-- `ai-review` — el code review fue asistido por IA.
+- Cada proyecto documenta una fecha de **"AI adoption start"** — el momento desde
+  el cual el equipo de ese proyecto adopta asistencia con IA de forma sistemática.
+- DevLake compara las mismas métricas **antes vs después** de esa fecha, **para el
+  mismo proyecto**. Nunca cruza cohortes entre proyectos distintos (cada equipo
+  tiene contexto, stack y cliente distinto).
 
-DevLake agrupa por label y permite comparar cycle time, review rounds y bug reopen
-rate entre cohortes.
+### Dónde se documenta la fecha
+
+Archivo único `docs/baselines.yml` en este repo:
+
+```yaml
+# docs/baselines.yml
+- project: tallone-sistema-de-gestion
+  ai_adoption_start: 2026-01-15
+  notes: "Adopción de Claude Code para feature dev. Confirmado por elamonica."
+
+- project: pinvest-platform
+  ai_adoption_start: 2025-11-01
+  notes: "Copilot organization-wide; Claude Code para PRs grandes."
+
+- project: idb-belize-dw
+  ai_adoption_start: null   # aun no adoptado
+```
+
+### Cómo lo consume DevLake
+
+Las queries de Grafana hacen `JOIN` contra esta tabla (cargada vía el plugin
+`customize` de DevLake, o vía import CSV directo a una tabla auxiliar). Cada
+panel relevante (throughput, cycle time, CFR) tiene una variante "by cohort"
+que separa pre/post fecha para el project seleccionado.
+
+### Cómo se decide la fecha
+
+- No tiene que ser un día específico — usar el inicio de la semana o el sprint
+  en el que el equipo lo adoptó.
+- Cambiar la fecha post-hoc es legítimo si te das cuenta que pifiaste la
+  estimación; queda registrado en el git log del archivo.
+- Si un proyecto **vuelve atrás** (deja de usar IA), no se borra la entrada:
+  se agrega un campo `ai_adoption_end` y se documenta el motivo.
 
 ---
 
@@ -79,10 +114,11 @@ Ejemplos: `idb-belize-dw`, `closeup-medical-directory`, `pinvest-platform`,
 
 ## 6. Checklist kickoff de proyecto
 
-- [ ] Project creado en DevLake con naming canónico
-- [ ] Repo(s) conectados (BitBucket o GitHub)
+- [ ] Project creado en DevLake con naming canónico (`scripts/onboard-github-project.sh`)
+- [ ] Repo(s) conectados (BitBucket o GitHub) — la onboarding script lo cubre
 - [ ] Proyecto Sentry conectado vía Alert Rule → webhook
 - [ ] Proyecto SonarCloud conectado
-- [ ] Workflow de deploy llama a `greencode/dora-deploy-action`
+- [ ] Workflow de deploy llama a `greencode-software/greencode-metrics/actions/dora-deploy@v1`
+- [ ] Entrada en `docs/baselines.yml` con `ai_adoption_start` (o `null` si aún no aplica)
 - [ ] Baseline screenshot guardado en Drive (carpeta del proyecto / 06-Metrics)
 - [ ] Project Manager agregado como viewer en Grafana

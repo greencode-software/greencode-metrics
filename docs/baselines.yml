@@ -1,0 +1,14 @@
+# Baselines por proyecto: fecha de adopcion de IA para cohort analysis.
+#
+# Ver docs/CONVENTIONS.md §4 para la definicion del criterio.
+#
+# Schema:
+#   project:            nombre canonico del project en DevLake (kebab-case)
+#   ai_adoption_start:  fecha ISO YYYY-MM-DD desde la cual el equipo adopta IA
+#                       de forma sistematica. null si aun no adoptado.
+#   ai_adoption_end:    (opcional) fecha en la que dejo de usarse, con motivo.
+#   notes:              contexto humano: que herramienta, quien lo confirmo, etc.
+
+- project: tallone-sistema-de-gestion
+  ai_adoption_start: null   # TODO: confirmar fecha con elamonica
+  notes: "Pendiente de definir. Probablemente Q1 2026 cuando se sumo Claude Code."

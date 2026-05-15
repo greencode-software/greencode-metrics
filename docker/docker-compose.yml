@@ -1,0 +1,90 @@
+# Apache DevLake - Stack Greencode
+# Genera engineering metrics centralizadas (DORA + calidad + flujo) para todos los proyectos.
+#
+# Uso:
+#   1) cp .env.example .env  y completar secrets
+#   2) docker compose up -d
+#   3) Abrir http://<host>:4000  -> Config UI
+#   4) Abrir http://<host>:3000  -> Grafana (admin / contraseña en .env)
+#
+# Recursos recomendados: 2 vCPU / 4 GB RAM / 40 GB disco para arrancar.
+# Probado con DevLake v1.0.2 (última estable a may-2026; ajustar tag si hay nueva).
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: greencode-devlake-mysql
+    restart: always
+    volumes:
+      - mysql-storage:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3306:3306"  # solo localhost por seguridad
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: lake
+      MYSQL_USER: merico
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command: --character-set-server=utf8mb4
+             --collation-server=utf8mb4_bin
+             --skip-log-bin
+
+  grafana:
+    image: apache/devlake-dashboard:v1.0.2
+    container_name: greencode-devlake-grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    environment:
+      GF_SERVER_ROOT_URL: "http://localhost:3000"
+      GF_USERS_DEFAULT_THEME: "light"  # cambialo a "dark" si querés
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      MYSQL_URL: mysql:3306
+      MYSQL_DATABASE: lake
+      MYSQL_USER: merico
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    depends_on:
+      - mysql
+
+  devlake:
+    image: apache/devlake:v1.0.2
+    container_name: greencode-devlake
+    restart: always
+    ports:
+      - "8080:8080"  # API + webhook receiver (Sentry, deploys, etc.)
+    volumes:
+      - devlake-log:/app/logs
+    environment:
+      DB_URL: "mysql://merico:${MYSQL_PASSWORD}@mysql:3306/lake?charset=utf8mb4&parseTime=True"
+      LOGGING_DIR: "/app/logs"
+      ENCRYPTION_SECRET: ${ENCRYPTION_SECRET}
+      # Plugins habilitados para el stack Greencode:
+      # - bitbucket: repos en Bitbucket Cloud
+      # - github: repos en GitHub
+      # - sonarqube: calidad de código (sirve también para SonarCloud)
+      # - webhook: receptor de Sentry incidents y deployments custom
+      # - dora: cálculo de las 4 métricas DORA
+      # - gitextractor: análisis de commits/branches a partir de los clones
+      # - refdiff: lead time for changes
+      # - org: estructura organizacional (equipos, proyectos)
+    depends_on:
+      - mysql
+
+  config-ui:
+    image: apache/devlake-config-ui:v1.0.2
+    container_name: greencode-devlake-config-ui
+    restart: always
+    ports:
+      - "4000:4000"
+    environment:
+      DEVLAKE_ENDPOINT: devlake:8080
+      GRAFANA_ENDPOINT: http://localhost:3000
+    depends_on:
+      - devlake
+
+volumes:
+  mysql-storage:
+  grafana-storage:
+  devlake-log:

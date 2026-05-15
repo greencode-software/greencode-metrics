@@ -1,18 +1,25 @@
-# SOPS encryption rules for greencode-metrics secrets.
+# SOPS encryption rules para greencode-metrics secrets.
 #
-# Uso:
-#   sops -e secrets/prod.env > secrets/prod.env.sops   # encriptar
-#   sops -d secrets/prod.env.sops > /tmp/.env          # desencriptar (boot EC2)
+# Encriptacion: age (https://github.com/FiloSottile/age).
+# La private key vive en:
+#   - 1Password / vault compartido del equipo (autoridad)
+#   - ~/.config/sops/age/keys.txt en la maquina del lider tecnico
+#   - /etc/sops/age/keys.txt en el droplet productivo (transferida via SCP una vez)
 #
-# La key de KMS se crea en AWS region us-east-1; el rol IAM del EC2 tiene
-# permiso kms:Decrypt sobre ella. Asi nadie humano necesita la clave en su laptop.
+# La public key (la linea de abajo en `age:`) es publica y va commiteada.
 #
-# Para emergencia (admin lider tecnico):
-#   - sops puede usar tambien una PGP key como fallback. Se agrega cuando se
-#     genera la KMS key real, no antes.
+# Para encriptar:    sops -e secrets/prod.env > secrets/prod.env.sops
+# Para desencriptar: sops -d secrets/prod.env.sops > /tmp/.env
+#                    (requiere SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt)
+#
+# Rotar la age key:
+#   1) generar pareja nueva: age-keygen -o ~/.config/sops/age/keys-new.txt
+#   2) editar este .sops.yaml con la nueva public key (mantener la vieja como segunda
+#      recipient para no quedarse sin acceso si algo falla)
+#   3) sops updatekeys secrets/prod.env.sops
+#   4) cuando todo este verificado y el droplet recibio la key nueva, sacar la vieja
+#      del .sops.yaml y volver a updatekeys.
 
 creation_rules:
   - path_regex: ^secrets/prod\.env$
-    kms: 'arn:aws:kms:us-east-1:REPLACE_ACCOUNT_ID:key/REPLACE_KEY_ID'
-    # pgp: 'FINGERPRINT_DE_EMERGENCIA'  # descomentar despues de crear la KMS key
-    aws_profile: greencode-platform
+    age: 'age1REPLACEME_with_public_key_from_age-keygen_output'

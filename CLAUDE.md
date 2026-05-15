@@ -1,5 +1,9 @@
 # Greencode Metrics Platform
 
+> 📍 **Para arrancar fresco en una sesión nueva**: leer este archivo,
+> después `docs/CONVENTIONS.md` (cómo instrumentar cada proyecto) y
+> `docs/STATUS.md` (estado actual y lo que sigue).
+
 Plataforma centralizada de métricas de ingeniería para todos los proyectos
 de Greencode Software SRL, basada en Apache DevLake.
 

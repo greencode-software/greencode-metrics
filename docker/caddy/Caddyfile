@@ -1,0 +1,79 @@
+# Caddy reverse proxy para el stack DevLake en produccion (EC2).
+#
+# Comportamiento:
+#   - TLS automatico via Let's Encrypt (ACME). Renueva solo.
+#   - / (Grafana) y /admin (Config UI) requieren auth distinta.
+#   - /api/plugins/webhook/*  → publico (Sentry y dora-deploy lo necesitan).
+#   - /api/*                  → basic auth (no exponer endpoints de connections/projects).
+#
+# Para activarlo basta con:
+#   docker compose -f docker/docker-compose.yml -f docker/caddy/docker-compose.caddy.yml up -d
+#
+# Variables tomadas de .env (decryptado por SOPS al boot):
+#   DOMAIN, ACME_EMAIL, BASIC_AUTH_USER, BASIC_AUTH_HASH
+
+{
+    email {$ACME_EMAIL}
+    # Descomentar si Cloudflare delante (modo "Full strict"). CF emite cert al edge,
+    # Caddy emite cert al origin. No mezclar con tunnel-only mode.
+    # acme_dns cloudflare {env.CF_API_TOKEN}
+}
+
+{$DOMAIN} {
+    # ---------- compresion ----------
+    encode zstd gzip
+
+    # ---------- logging ----------
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 50mb
+            roll_keep 7
+        }
+        format json
+    }
+
+    # ---------- 1) webhook publico: NO auth ----------
+    # Sentry alerta y dora-deploy action postean aca. Tienen que ser alcanzables sin
+    # credenciales. La proteccion real es el HMAC signing (Sentry) y la URL contiene
+    # el connection-id que es secreto-por-oscuridad. Ver runbook EC2 bootstrap.
+    handle_path /api/plugins/webhook/* {
+        reverse_proxy devlake:8080 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+        # restore prefix
+        rewrite * /api/plugins/webhook{uri}
+    }
+
+    # ---------- 2) resto de la API DevLake: basic auth ----------
+    handle /api/* {
+        basic_auth {
+            {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+        }
+        reverse_proxy devlake:8080
+    }
+
+    # ---------- 3) Config UI: basic auth ----------
+    handle /admin/* {
+        basic_auth {
+            {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+        }
+        reverse_proxy config-ui:4000
+    }
+    redir /admin /admin/
+
+    # ---------- 4) default: Grafana (con su propio auth Google OAuth) ----------
+    handle {
+        reverse_proxy grafana:3000
+    }
+
+    # ---------- headers de seguridad basicos ----------
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "no-referrer-when-downgrade"
+    }
+}
+
+# redirect HTTP → HTTPS lo hace Caddy implicitamente cuando hay un site bloque sin :80

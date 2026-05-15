@@ -6,3 +6,10 @@ volumes/
 .vscode/
 __pycache__/
 *.pyc
+
+# Plain-text secrets: NUNCA commitear. Solo la version SOPS-encriptada (sin esta
+# extension) puede entrar al repo.
+secrets/prod.env
+secrets/*.env
+!secrets/*.env.example
+!secrets/*.env.sops

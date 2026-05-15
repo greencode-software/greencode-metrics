@@ -1,0 +1,58 @@
+# Overlay para sumar Caddy al stack DevLake en produccion.
+#
+# Uso (EC2):
+#   docker compose \
+#     -f docker/docker-compose.yml \
+#     -f docker/caddy/docker-compose.caddy.yml \
+#     up -d
+#
+# En local NO se usa: el stack base ya expone los puertos directo al host.
+# Caddy solo entra cuando hay un dominio publico con TLS.
+
+services:
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: greencode-devlake-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # certs ACME persisten aca
+      - caddy-config:/config
+      - caddy-log:/var/log/caddy
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH}
+    depends_on:
+      - grafana
+      - devlake
+      - config-ui
+
+  # ---- cuando esta Caddy, cerramos los puertos publicos de los demas ----
+  # El stack base bindea Grafana/Config UI/DevLake a puertos publicos por
+  # comodidad de dev local. En prod queremos que SOLO Caddy llegue afuera.
+  # Override de ports = [] elimina la exposicion sin reescribir compose base.
+
+  grafana:
+    ports: []
+
+  config-ui:
+    ports: []
+
+  devlake:
+    ports: []
+
+  mysql:
+    # MySQL ya estaba bindeado a 127.0.0.1 solo. Lo dejamos asi.
+    ports: []
+
+volumes:
+  caddy-data:
+  caddy-config:
+  caddy-log:

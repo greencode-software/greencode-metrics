@@ -1,0 +1,18 @@
+# SOPS encryption rules for greencode-metrics secrets.
+#
+# Uso:
+#   sops -e secrets/prod.env > secrets/prod.env.sops   # encriptar
+#   sops -d secrets/prod.env.sops > /tmp/.env          # desencriptar (boot EC2)
+#
+# La key de KMS se crea en AWS region us-east-1; el rol IAM del EC2 tiene
+# permiso kms:Decrypt sobre ella. Asi nadie humano necesita la clave en su laptop.
+#
+# Para emergencia (admin lider tecnico):
+#   - sops puede usar tambien una PGP key como fallback. Se agrega cuando se
+#     genera la KMS key real, no antes.
+
+creation_rules:
+  - path_regex: ^secrets/prod\.env$
+    kms: 'arn:aws:kms:us-east-1:REPLACE_ACCOUNT_ID:key/REPLACE_KEY_ID'
+    # pgp: 'FINGERPRINT_DE_EMERGENCIA'  # descomentar despues de crear la KMS key
+    aws_profile: greencode-platform

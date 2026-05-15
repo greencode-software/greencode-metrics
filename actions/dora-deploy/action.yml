@@ -1,0 +1,138 @@
+name: 'Greencode DORA Deploy Notifier'
+description: 'Notifica al stack DevLake de Greencode que ocurrio un deploy a prod. Habilita Deploy Frequency y Lead Time for Changes en los dashboards DORA.'
+author: 'Greencode Software'
+
+# Uso desde un workflow consumidor:
+#
+#   - name: Notify DevLake of prod deploy
+#     uses: greencode-software/greencode-metrics/actions/dora-deploy@v1
+#     with:
+#       project:        tallone-sistema-de-gestion
+#       environment:    production
+#       commit-sha:     ${{ github.sha }}
+#       repo-url:       ${{ github.server_url }}/${{ github.repository }}
+#       webhook-url:    ${{ secrets.DEVLAKE_DEPLOY_WEBHOOK }}
+#       started-at:     ${{ steps.deploy.outputs.started_at }}   # opcional
+#       result:         ${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}
+#
+# El secret DEVLAKE_DEPLOY_WEBHOOK se gestiona a nivel organization:
+#   https://metrics.greencode.com.ar/api/plugins/webhook/connections/<id>/deployments
+# Lo provee el equipo de Plataforma; los repos solo lo consumen.
+
+inputs:
+  project:
+    description: 'Nombre del project en DevLake (kebab-case, ej: tallone-sistema-de-gestion)'
+    required: true
+  environment:
+    description: 'Entorno: production | staging | development'
+    required: false
+    default: 'production'
+  commit-sha:
+    description: 'SHA del commit deployado'
+    required: true
+  repo-url:
+    description: 'URL del repo (ej: https://github.com/elamonica/tallone)'
+    required: true
+  webhook-url:
+    description: 'URL del webhook DevLake (de org secret DEVLAKE_DEPLOY_WEBHOOK)'
+    required: true
+  started-at:
+    description: 'Timestamp ISO-8601 de inicio del deploy. Default: ahora menos 1min.'
+    required: false
+    default: ''
+  result:
+    description: 'SUCCESS | FAILURE'
+    required: false
+    default: 'SUCCESS'
+  ref-name:
+    description: 'Branch o tag deployada'
+    required: false
+    default: 'main'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Compute timestamps
+      id: ts
+      shell: bash
+      run: |
+        FINISHED="$(date -u +%Y-%m-%dT%H:%M:%S%z | sed 's/+0000/Z/')"
+        if [[ -n "${{ inputs.started-at }}" ]]; then
+          STARTED="${{ inputs.started-at }}"
+        else
+          STARTED="$(date -u -v-1M +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)"
+        fi
+        echo "started=$STARTED" >> "$GITHUB_OUTPUT"
+        echo "finished=$FINISHED" >> "$GITHUB_OUTPUT"
+
+    - name: Build payload
+      id: payload
+      shell: bash
+      env:
+        PROJECT:    ${{ inputs.project }}
+        ENVIRON:    ${{ inputs.environment }}
+        SHA:        ${{ inputs.commit-sha }}
+        REPO:       ${{ inputs.repo-url }}
+        REF:        ${{ inputs.ref-name }}
+        RESULT:     ${{ inputs.result }}
+        STARTED:    ${{ steps.ts.outputs.started }}
+        FINISHED:   ${{ steps.ts.outputs.finished }}
+        RUN_ID:     ${{ github.run_id }}
+        RUN_NUM:    ${{ github.run_number }}
+      run: |
+        ENV_UPPER=$(echo "$ENVIRON" | tr '[:lower:]' '[:upper:]')
+        cat > /tmp/payload.json <<EOF
+        {
+          "id": "github-run-${RUN_ID}",
+          "displayTitle": "Deploy ${PROJECT} #${RUN_NUM} → ${ENVIRON}",
+          "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${RUN_ID}",
+          "result": "${RESULT}",
+          "environment": "${ENV_UPPER}",
+          "startedDate": "${STARTED}",
+          "finishedDate": "${FINISHED}",
+          "deploymentCommits": [
+            {
+              "displayTitle": "Deploy ${PROJECT} → ${ENVIRON}",
+              "repoUrl": "${REPO}",
+              "refName": "${REF}",
+              "commitSha": "${SHA}",
+              "startedDate": "${STARTED}",
+              "finishedDate": "${FINISHED}",
+              "result": "${RESULT}",
+              "environment": "${ENV_UPPER}"
+            }
+          ]
+        }
+        EOF
+        # validar JSON antes de mandar
+        python3 -c "import json,sys; json.load(open('/tmp/payload.json'))" \
+          || { echo "::error::payload JSON invalido"; cat /tmp/payload.json; exit 1; }
+        echo "::group::DevLake deploy payload"
+        cat /tmp/payload.json
+        echo "::endgroup::"
+
+    - name: POST to DevLake
+      shell: bash
+      env:
+        WEBHOOK: ${{ inputs.webhook-url }}
+      run: |
+        # Reintenta hasta 3 veces; NO falla el deploy si DevLake esta caido.
+        # El deploy ya ocurrio en prod — perder telemetria es feo pero no critico.
+        for attempt in 1 2 3; do
+          HTTP=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" \
+            -X POST -H 'Content-Type: application/json' \
+            --max-time 15 \
+            -d @/tmp/payload.json "$WEBHOOK" || echo "000")
+          if [[ "$HTTP" =~ ^2 ]]; then
+            echo "::notice::DevLake deploy notificado OK (HTTP $HTTP)"
+            exit 0
+          fi
+          echo "::warning::intento $attempt: HTTP $HTTP"
+          cat /tmp/resp.txt 2>/dev/null | head -c 500
+          sleep $((attempt * 3))
+        done
+        echo "::warning::No se pudo notificar a DevLake despues de 3 intentos. El deploy a prod NO se aborta — revisar /api/plugins/webhook health en el stack."
+
+branding:
+  icon: 'bar-chart-2'
+  color: 'green'

@@ -5,7 +5,8 @@
 #   1) cp .env.example .env  y completar secrets
 #   2) docker compose up -d
 #   3) Abrir http://<host>:4000  -> Config UI
-#   4) Abrir http://<host>:3000  -> Grafana (admin / contraseña en .env)
+#   4) Abrir http://<host>:3001  -> Grafana (admin / contraseña en .env)
+#      (3000 reservado para otros stacks locales; en VM productiva volverá a 3000)
 #
 # Recursos recomendados: 2 vCPU / 4 GB RAM / 40 GB disco para arrancar.
 # Probado con DevLake v1.0.2 (última estable a may-2026; ajustar tag si hay nueva).
@@ -34,11 +35,11 @@ services:
     container_name: greencode-devlake-grafana
     restart: always
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - grafana-storage:/var/lib/grafana
     environment:
-      GF_SERVER_ROOT_URL: "http://localhost:3000"
+      GF_SERVER_ROOT_URL: "http://localhost:3001"
       GF_USERS_DEFAULT_THEME: "light"  # cambialo a "dark" si querés
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       MYSQL_URL: mysql:3306
@@ -53,7 +54,7 @@ services:
     container_name: greencode-devlake
     restart: always
     ports:
-      - "8080:8080"  # API + webhook receiver (Sentry, deploys, etc.)
+      - "8088:8080"  # API + webhook receiver (Sentry, deploys, etc.). Host 8088 porque 8080 está tomado en local.
     volumes:
       - devlake-log:/app/logs
     environment:
@@ -80,7 +81,7 @@ services:
       - "4000:4000"
     environment:
       DEVLAKE_ENDPOINT: devlake:8080
-      GRAFANA_ENDPOINT: http://localhost:3000
+      GRAFANA_ENDPOINT: http://localhost:3001
     depends_on:
       - devlake
 

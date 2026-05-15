@@ -2,25 +2,58 @@
 # Onboarding idempotente de un repo de GitHub al stack DevLake de Greencode.
 #
 # Uso:
-#   scripts/onboard-github-project.sh <devlake-project> <owner/repo>
+#   scripts/onboard-github-project.sh [opciones] <devlake-project> <owner/repo>
+#
+# Opciones de token (mutuamente excluyentes):
+#   --token-env VARNAME    leer token desde env var $VARNAME (no aparece en argv)
+#   --token-file PATH      leer token desde archivo (chmod 600 recomendado)
+#   (sin flag)             usar `gh auth token` con fallback a keyring (default)
 #
 # Ejemplos:
+#   # tallone (cuenta personal elamonica via gh keyring):
 #   scripts/onboard-github-project.sh tallone-sistema-de-gestion elamonica/tallone
-#   scripts/onboard-github-project.sh pinvest-platform           greencode-software/pinvest-api
+#
+#   # repo de la org greencode-software con PAT en env var:
+#   GH_TOKEN_GREENCODE=ghp_... \
+#     scripts/onboard-github-project.sh --token-env GH_TOKEN_GREENCODE \
+#       pinvest-platform greencode-software/pinvest-api
+#
+#   # idem con PAT en archivo:
+#   scripts/onboard-github-project.sh --token-file ~/.greencode/tokens/github-org \
+#     pinvest-platform greencode-software/pinvest-api
 #
 # Env vars opcionales:
 #   DEVLAKE_API=http://localhost:8088   (default)
 #   ENABLE_GRAPHQL=false                (default; true requiere PAT con scope read:user)
 #   TIME_AFTER=2025-11-15T00:00:00Z     (cutoff de history; default = 6 meses atras)
 #
-# Requisitos: curl, jq, python3, gh (autenticado en github.com), DevLake corriendo.
-# El token de gh nunca se imprime ni se inspecciona; se pipea inline al body de curl.
+# Requisitos: curl, jq, python3. gh es opcional (solo necesario si NO usas --token-*).
+# El token nunca se imprime, nunca pasa por argv, solo por stdin/env de subshells.
 
 set -euo pipefail
 
 # ---------- args ----------
+TOKEN_SOURCE="gh"           # gh | env | file
+TOKEN_SOURCE_REF=""
+
+while [[ $# -gt 0 ]]; do
+  case "${1:-}" in
+    --token-env)
+      [[ -n "${2:-}" ]] || { echo "--token-env requiere VARNAME" >&2; exit 64; }
+      TOKEN_SOURCE="env"; TOKEN_SOURCE_REF="$2"; shift 2 ;;
+    --token-file)
+      [[ -n "${2:-}" ]] || { echo "--token-file requiere PATH" >&2; exit 64; }
+      TOKEN_SOURCE="file"; TOKEN_SOURCE_REF="$2"; shift 2 ;;
+    -h|--help)
+      sed -n '2,30p' "$0"; exit 0 ;;
+    --) shift; break ;;
+    -*) echo "flag desconocido: $1" >&2; exit 64 ;;
+    *)  break ;;
+  esac
+done
+
 if [[ $# -ne 2 ]]; then
-  echo "uso: $0 <devlake-project> <owner/repo>" >&2
+  echo "uso: $0 [--token-env VAR | --token-file PATH] <devlake-project> <owner/repo>" >&2
   exit 64
 fi
 PROJECT_NAME="$1"
@@ -43,13 +76,30 @@ ok()   { printf "  \033[1;32m✓\033[0m %s\n" "$*" >&2; }
 warn() { printf "  \033[1;33m!\033[0m %s\n" "$*" >&2; }
 err()  { printf "  \033[1;31m✗\033[0m %s\n" "$*" >&2; }
 
-# wrapper para ejecutar gh con el token correcto (env o keyring)
+# token_pipe: imprime el token al stdout. Para uso unico, siempre via pipe.
+# Nunca lo asigna a una variable persistente, nunca lo logea.
 GH_USE_KEYRING="${GH_USE_KEYRING:-}"
-gh_call() {
-  if [[ -n "$GH_USE_KEYRING" ]]; then GITHUB_TOKEN= gh "$@"; else gh "$@"; fi
+token_pipe() {
+  case "$TOKEN_SOURCE" in
+    gh)
+      if [[ -n "$GH_USE_KEYRING" ]]; then GITHUB_TOKEN= gh auth token
+      else gh auth token; fi ;;
+    env)
+      local v="${!TOKEN_SOURCE_REF:-}"
+      [[ -n "$v" ]] || { err "env var \$$TOKEN_SOURCE_REF esta vacia"; exit 1; }
+      printf '%s' "$v" ;;
+    file)
+      [[ -r "$TOKEN_SOURCE_REF" ]] || { err "no se puede leer $TOKEN_SOURCE_REF"; exit 1; }
+      tr -d '[:space:]' < "$TOKEN_SOURCE_REF" ;;
+  esac
 }
-gh_token_pipe() {
-  if [[ -n "$GH_USE_KEYRING" ]]; then GITHUB_TOKEN= gh auth token; else gh auth token; fi
+
+# gh_api PATH → GET https://api.github.com/PATH usando el token activo.
+# El token entra al subshell por stdin (no argv, no env del shell padre).
+gh_api() {
+  token_pipe | { read -r T; curl -fsS -H "Authorization: Bearer $T" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/$1"; }
 }
 
 require() {
@@ -60,31 +110,41 @@ require() {
 
 # ---------- 1. preflight ----------
 log "Preflight"
-require curl jq python3 gh
+require curl jq python3
+[[ "$TOKEN_SOURCE" == "gh" ]] && require gh
 curl -fsS "$DEVLAKE_API/projects" >/dev/null \
   || { err "DevLake API no responde en $DEVLAKE_API"; exit 1; }
 ok "DevLake responde en $DEVLAKE_API"
 
-gh auth status -h github.com >/dev/null 2>&1 \
-  || { err "gh no esta autenticado (correr: gh auth login)"; exit 1; }
-ok "gh autenticado"
-
-# ---------- 2. detectar token con acceso al repo ----------
-log "Buscando token gh con acceso a $OWNER_REPO"
-if gh api "repos/$OWNER_REPO" --silent 2>/dev/null; then
-  ok "usando token activo (GITHUB_TOKEN env)"
-elif GITHUB_TOKEN= gh api "repos/$OWNER_REPO" --silent 2>/dev/null; then
-  GH_USE_KEYRING=1
-  ok "usando token del keyring (gho_*)"
-else
-  err "ningun token de gh tiene acceso a $OWNER_REPO"
-  err "opciones: gh auth refresh -s repo  /  gh auth login  /  crear PAT con scope repo"
-  exit 1
-fi
+# ---------- 2. resolver token con acceso al repo ----------
+log "Resolviendo token con acceso a $OWNER_REPO (source=$TOKEN_SOURCE)"
+case "$TOKEN_SOURCE" in
+  gh)
+    gh auth status -h github.com >/dev/null 2>&1 \
+      || { err "gh no esta autenticado (correr: gh auth login)"; exit 1; }
+    if gh api "repos/$OWNER_REPO" --silent 2>/dev/null; then
+      ok "usando token activo gh (GITHUB_TOKEN env)"
+    elif GITHUB_TOKEN= gh api "repos/$OWNER_REPO" --silent 2>/dev/null; then
+      GH_USE_KEYRING=1
+      ok "usando token del keyring gh (gho_*)"
+    else
+      err "ningun token de gh tiene acceso a $OWNER_REPO"
+      err "opciones: gh auth refresh -s repo  /  gh auth login  /  pasar --token-env"
+      exit 1
+    fi ;;
+  env|file)
+    if gh_api "repos/$OWNER_REPO" >/dev/null 2>&1; then
+      ok "token suministrado tiene acceso a $OWNER_REPO"
+    else
+      err "el token de $TOKEN_SOURCE='$TOKEN_SOURCE_REF' no tiene acceso a $OWNER_REPO"
+      err "verificar scopes: repo, read:org, read:user, workflow"
+      exit 1
+    fi ;;
+esac
 
 # ---------- 3. metadata del repo ----------
 log "Fetching metadata de $OWNER_REPO"
-REPO_JSON=$(gh_call api "repos/$OWNER_REPO")
+REPO_JSON=$(gh_api "repos/$OWNER_REPO")
 GITHUB_ID=$(jq      '.id'           <<<"$REPO_JSON")
 OWNER_ID=$(jq       '.owner.id'     <<<"$REPO_JSON")
 LANGUAGE=$(jq -r    '.language // ""' <<<"$REPO_JSON")
@@ -103,14 +163,14 @@ if [[ -n "$CONN_ID" ]]; then
   ok "ya existe (id=$CONN_ID) — re-PATCHeando token + flags"
   # PATCH exige token; mantenemos el existing payload y solo overrideamos token+enableGraphql
   CURRENT=$(curl -fsS "$DEVLAKE_API/plugins/github/connections/$CONN_ID")
-  gh_token_pipe \
+  token_pipe \
     | jq -Rs --argjson cur "$CURRENT" --argjson eg "$ENABLE_GRAPHQL" \
         '$cur + {token:(.|rtrimstr("\n")), enableGraphql:$eg}' \
     | curl -fsS -X PATCH -H 'Content-Type: application/json' \
         -d @- "$DEVLAKE_API/plugins/github/connections/$CONN_ID" >/dev/null
   ok "connection actualizada"
 else
-  CONN_ID=$(gh_token_pipe \
+  CONN_ID=$(token_pipe \
     | jq -Rs --arg n "$CONN_NAME" --argjson eg "$ENABLE_GRAPHQL" \
         '{name:$n, endpoint:"https://api.github.com/", token:(.|rtrimstr("\n")), proxy:"", rateLimitPerHour:0, authMethod:"AccessToken", enableGraphql:$eg}' \
     | curl -fsS -X POST -H 'Content-Type: application/json' -d @- \

@@ -22,4 +22,4 @@
 
 creation_rules:
   - path_regex: ^secrets/prod\.env$
-    age: 'age1REPLACEME_with_public_key_from_age-keygen_output'
+    age: 'age1ekalspnrt5nvgv9pk7dv0p8tujhvu2hfysrgyyngz7vw9qysvd6s6n3qfa'

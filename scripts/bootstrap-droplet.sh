@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-git@github.com:greencode-software/greencode-metrics.git}"
+REPO_URL="${REPO_URL:-https://github.com/greencode-software/greencode-metrics.git}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/devlake}"
 # Default name del Block Storage Volume en DO. Ajustar si lo creas con otro nombre.
 DO_VOLUME_NAME="${DO_VOLUME_NAME:-devlake-data}"

@@ -80,7 +80,7 @@ Antes del primer bootstrap, asegurarse que existen:
 
 6. **Verificar DNS antes de seguir**:
    ```bash
-   dig +short metrics.greencodesoftware.com
+   dig +short devlake.greencodesoftware.com
    # debe devolver la Reserved IP
    ```
 
@@ -91,7 +91,7 @@ Antes del primer bootstrap, asegurarse que existen:
 SSH al droplet:
 
 ```bash
-ssh root@metrics.greencodesoftware.com
+ssh root@devlake.greencodesoftware.com
 ```
 
 **Paso unico antes de correr el script**: subir la age private key. Solo se hace
@@ -99,7 +99,7 @@ una vez por droplet (o cuando se rota la key):
 
 ```bash
 # desde tu Mac:
-scp ~/.config/sops/age/keys.txt root@metrics.greencodesoftware.com:/tmp/age-keys.txt
+scp ~/.config/sops/age/keys.txt root@devlake.greencodesoftware.com:/tmp/age-keys.txt
 
 # en el droplet:
 mkdir -p /etc/sops/age
@@ -120,14 +120,14 @@ El script es idempotente. Si falla a la mitad, lo re-corres y retoma.
 
 ## Validacion (5 min)
 
-- [ ] `dig +short metrics.greencodesoftware.com` → Reserved IP correcta.
-- [ ] `curl -I https://metrics.greencodesoftware.com` → 200 OK, header `Server: Caddy`.
-- [ ] `curl -I https://metrics.greencodesoftware.com/api/plugins/webhook/connections`
+- [ ] `dig +short devlake.greencodesoftware.com` → Reserved IP correcta.
+- [ ] `curl -I https://devlake.greencodesoftware.com` → 200 OK, header `Server: Caddy`.
+- [ ] `curl -I https://devlake.greencodesoftware.com/api/plugins/webhook/connections`
       → 200 con JSON (path publico).
-- [ ] `curl -I https://metrics.greencodesoftware.com/api/projects` → 401 Unauthorized
+- [ ] `curl -I https://devlake.greencodesoftware.com/api/projects` → 401 Unauthorized
       (basic auth protegiendo).
-- [ ] Browser a `https://metrics.greencodesoftware.com` → Grafana login con Google.
-- [ ] Browser a `https://metrics.greencodesoftware.com/admin` → prompt basic auth → Config UI.
+- [ ] Browser a `https://devlake.greencodesoftware.com` → Grafana login con Google.
+- [ ] Browser a `https://devlake.greencodesoftware.com/admin` → prompt basic auth → Config UI.
 
 DNS via Route 53: nada mas que hacer aca despues de validar (no hay proxy que activar).
 Si en el futuro se decide mover a Cloudflare, ver "Migracion DNS" mas abajo.
@@ -138,12 +138,12 @@ Si en el futuro se decide mover a Cloudflare, ver "Migracion DNS" mas abajo.
 
 ```bash
 # desde tu Mac (no en el droplet), con DEVLAKE_API apuntando al stack publico:
-DEVLAKE_API="https://metrics.greencodesoftware.com/api" \
+DEVLAKE_API="https://devlake.greencodesoftware.com/api" \
   ./scripts/onboard-github-project.sh \
     tallone-sistema-de-gestion elamonica/tallone
 
 # para proyectos de la org greencode-software, usar la misma cuenta gh:
-DEVLAKE_API="https://metrics.greencodesoftware.com/api" \
+DEVLAKE_API="https://devlake.greencodesoftware.com/api" \
   ./scripts/onboard-github-project.sh \
     pinvest-platform greencode-software/pinvest-api
 ```
@@ -165,7 +165,7 @@ En el stack productivo hace falta crear dos webhook connections distintas:
 una para deploys, otra para incidents. Ejecutar **una vez**:
 
 ```bash
-WEBHOOK_API="https://metrics.greencodesoftware.com/api/plugins/webhook/connections"
+WEBHOOK_API="https://devlake.greencodesoftware.com/api/plugins/webhook/connections"
 AUTH="-u greencode:<basic-pass>"
 
 # deploys
@@ -181,9 +181,9 @@ curl -fsS $AUTH -X POST -H 'Content-Type: application/json' \
 
 Luego:
 - En GitHub org secrets, crear `DEVLAKE_DEPLOY_WEBHOOK` con valor:
-  `https://metrics.greencodesoftware.com/api/plugins/webhook/connections/1/deployments`
+  `https://devlake.greencodesoftware.com/api/plugins/webhook/connections/1/deployments`
 - En cada proyecto Sentry, crear un Alert Rule → action Webhook con URL:
-  `https://metrics.greencodesoftware.com/api/plugins/webhook/connections/2/issues`
+  `https://devlake.greencodesoftware.com/api/plugins/webhook/connections/2/issues`
 
 Despues de eso, los datos empiezan a fluir solos a las dashboards DORA.
 
@@ -235,7 +235,7 @@ Tiempo: 15-20 min si tenes el Volume + Reserved IP intactos.
 | Caddy no obtiene cert: `no such host` | DNS no propagó | esperar; `docker compose restart caddy` |
 | Caddy no obtiene cert despues de varios intentos | rate limit Let's Encrypt | usar staging mientras testeas: en Caddyfile global, `acme_ca https://acme-staging-v02.api.letsencrypt.org/directory` |
 | `/api/projects` da 502 | DevLake no arrancó | `docker logs greencode-devlake \| tail -50` |
-| Login Grafana redirige a localhost | `GF_SERVER_ROOT_URL` mal | poner `https://metrics.greencodesoftware.com` en .env y reiniciar grafana |
+| Login Grafana redirige a localhost | `GF_SERVER_ROOT_URL` mal | poner `https://devlake.greencodesoftware.com` en .env y reiniciar grafana |
 | Webhook deploys no aparece en DORA | falta job `org` que hace project_mapping | re-correr blueprint del project; o esperar cron diario |
 | Cloudflare da error 521 (web server is down) | Caddy crasheó o no escucha en 80/443 | `docker compose logs caddy`; chequear que ports 80/443 esten libres |
 | `sops -d` falla con "no key could decrypt the data" | age key faltante o no es la correcta | verificar `/etc/sops/age/keys.txt` esta presente y permisos 600; la public key del .sops.yaml tiene que matchear con la private |

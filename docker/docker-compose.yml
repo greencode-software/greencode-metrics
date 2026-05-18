@@ -39,13 +39,28 @@ services:
     volumes:
       - grafana-storage:/var/lib/grafana
     environment:
-      GF_SERVER_ROOT_URL: "http://localhost:3001"
-      GF_USERS_DEFAULT_THEME: "light"  # cambialo a "dark" si querés
+      # En local DOMAIN no esta seteado, asi que cae al default localhost.
+      # En prod, .env decryptado define DOMAIN=devlake.greencodesoftware.com.
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:-http://localhost:3001}
+      GF_SERVER_DOMAIN: ${DOMAIN:-localhost}
+      GF_USERS_DEFAULT_THEME: "light"
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       MYSQL_URL: mysql:3306
       MYSQL_DATABASE: lake
       MYSQL_USER: merico
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      # ---------- Google OAuth (solo activa si GF_AUTH_GOOGLE_CLIENT_ID esta seteado) ----------
+      # En local no van seteados -> Grafana cae a auth admin/admin local.
+      # En prod, los valores vienen del prod.env.sops decryptado.
+      GF_AUTH_GOOGLE_ENABLED: ${GF_AUTH_GOOGLE_ENABLED:-false}
+      GF_AUTH_GOOGLE_CLIENT_ID: ${GF_AUTH_GOOGLE_CLIENT_ID:-}
+      GF_AUTH_GOOGLE_CLIENT_SECRET: ${GF_AUTH_GOOGLE_CLIENT_SECRET:-}
+      GF_AUTH_GOOGLE_ALLOWED_DOMAINS: ${GF_AUTH_GOOGLE_ALLOWED_DOMAINS:-}
+      GF_AUTH_GOOGLE_HOSTED_DOMAIN: ${GF_AUTH_GOOGLE_ALLOWED_DOMAINS:-}
+      GF_AUTH_GOOGLE_AUTO_LOGIN: "false"
+      GF_AUTH_GOOGLE_ALLOW_SIGN_UP: "true"
+      GF_USERS_AUTO_ASSIGN_ORG: "true"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: "Viewer"
     depends_on:
       - mysql
 

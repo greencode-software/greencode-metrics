@@ -53,14 +53,14 @@
         reverse_proxy devlake:8080
     }
 
-    # ---------- 3) Config UI: basic auth ----------
-    handle /admin/* {
-        basic_auth {
-            {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
-        }
-        reverse_proxy config-ui:4000
-    }
-    redir /admin /admin/
+    # ---------- 3) Config UI: acceso por SSH tunnel (no via Caddy) ----------
+    # La Config UI de DevLake es un SPA que sirve assets desde / (no soporta subpath),
+    # asi que NO se puede exponer en /admin sin subdominio dedicado o build custom.
+    # Por ahora: acceso via SSH tunnel desde la maquina del admin:
+    #   ssh -L 4000:127.0.0.1:4000 root@<droplet-ip>
+    #   abrir http://localhost:4000  -> Config UI directo
+    # La proteccion real es no exponer 4000 fuera del droplet (ver caddy overlay).
+    # Futuro mejorable: subdominio dedicado tipo admin-devlake.greencodesoftware.com.
 
     # ---------- 4) default: Grafana (con su propio auth Google OAuth) ----------
     handle {

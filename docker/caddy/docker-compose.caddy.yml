@@ -43,7 +43,11 @@ services:
     ports: []
 
   config-ui:
-    ports: []
+    # Sigue bindeada en el droplet, pero solo en localhost (127.0.0.1) — no expuesta
+    # a internet. Acceso productivo via SSH tunnel:
+    #   ssh -L 4000:127.0.0.1:4000 root@<droplet-ip>
+    ports:
+      - "127.0.0.1:4000:4000"
 
   devlake:
     ports: []

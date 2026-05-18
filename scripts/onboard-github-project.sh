@@ -24,6 +24,7 @@
 #
 # Env vars opcionales:
 #   DEVLAKE_API=http://localhost:8088   (default)
+#   DEVLAKE_BASIC_AUTH=user:pass        (cuando la API esta detras de Caddy basic auth)
 #   ENABLE_GRAPHQL=false                (default; true requiere PAT con scope read:user)
 #   TIME_AFTER=2025-11-15T00:00:00Z     (cutoff de history; default = 6 meses atras)
 #
@@ -108,11 +109,22 @@ require() {
   done
 }
 
+# dl_curl: wrapper de curl para la API de DevLake. Inyecta basic auth si
+# $DEVLAKE_BASIC_AUTH esta seteado (formato user:pass). En local (sin Caddy)
+# DEVLAKE_BASIC_AUTH queda vacio y dl_curl se comporta igual que curl -fsS.
+dl_curl() {
+  if [[ -n "${DEVLAKE_BASIC_AUTH:-}" ]]; then
+    curl -fsS -u "$DEVLAKE_BASIC_AUTH" "$@"
+  else
+    curl -fsS "$@"
+  fi
+}
+
 # ---------- 1. preflight ----------
 log "Preflight"
 require curl jq python3
 [[ "$TOKEN_SOURCE" == "gh" ]] && require gh
-curl -fsS "$DEVLAKE_API/projects" >/dev/null \
+dl_curl "$DEVLAKE_API/projects" >/dev/null \
   || { err "DevLake API no responde en $DEVLAKE_API"; exit 1; }
 ok "DevLake responde en $DEVLAKE_API"
 
@@ -156,24 +168,24 @@ ok "githubId=$GITHUB_ID ownerId=$OWNER_ID lang=$LANGUAGE branch=$DEFAULT_BR"
 
 # ---------- 4. connection ----------
 log "Connection \"$CONN_NAME\""
-CONN_ID=$(curl -fsS "$DEVLAKE_API/plugins/github/connections" \
+CONN_ID=$(dl_curl "$DEVLAKE_API/plugins/github/connections" \
   | jq --arg n "$CONN_NAME" '[.[]|select(.name==$n)][0].id // empty')
 
 if [[ -n "$CONN_ID" ]]; then
   ok "ya existe (id=$CONN_ID) — re-PATCHeando token + flags"
   # PATCH exige token; mantenemos el existing payload y solo overrideamos token+enableGraphql
-  CURRENT=$(curl -fsS "$DEVLAKE_API/plugins/github/connections/$CONN_ID")
+  CURRENT=$(dl_curl "$DEVLAKE_API/plugins/github/connections/$CONN_ID")
   token_pipe \
     | jq -Rs --argjson cur "$CURRENT" --argjson eg "$ENABLE_GRAPHQL" \
         '$cur + {token:(.|rtrimstr("\n")), enableGraphql:$eg}' \
-    | curl -fsS -X PATCH -H 'Content-Type: application/json' \
+    | dl_curl -X PATCH -H 'Content-Type: application/json' \
         -d @- "$DEVLAKE_API/plugins/github/connections/$CONN_ID" >/dev/null
   ok "connection actualizada"
 else
   CONN_ID=$(token_pipe \
     | jq -Rs --arg n "$CONN_NAME" --argjson eg "$ENABLE_GRAPHQL" \
         '{name:$n, endpoint:"https://api.github.com/", token:(.|rtrimstr("\n")), proxy:"", rateLimitPerHour:0, authMethod:"AccessToken", enableGraphql:$eg}' \
-    | curl -fsS -X POST -H 'Content-Type: application/json' -d @- \
+    | dl_curl -X POST -H 'Content-Type: application/json' -d @- \
         "$DEVLAKE_API/plugins/github/connections" | jq '.id')
   ok "creada (id=$CONN_ID, enableGraphql=$ENABLE_GRAPHQL)"
 fi
@@ -185,25 +197,25 @@ SCOPE_PAYLOAD=$(jq -n \
   --arg name "$REPO" --arg full "$OWNER_REPO" --arg lang "$LANGUAGE" \
   --arg curl "$CLONE_URL" --arg hurl "$HTML_URL" --arg desc "$DESCRIPTION" \
   '{data:[{connectionId:$cid, githubId:$gid, ownerId:$oid, name:$name, fullName:$full, language:$lang, cloneUrl:$curl, HTMLUrl:$hurl, description:$desc}]}')
-curl -fsS -X PUT -H 'Content-Type: application/json' -d "$SCOPE_PAYLOAD" \
+dl_curl -X PUT -H 'Content-Type: application/json' -d "$SCOPE_PAYLOAD" \
   "$DEVLAKE_API/plugins/github/connections/$CONN_ID/scopes" >/dev/null
 ok "scope upserteado (name=$REPO, fullName=$OWNER_REPO)"
 
 # ---------- 6. project ----------
 log "Project \"$PROJECT_NAME\""
-if curl -fsS -o /dev/null -w '%{http_code}' "$DEVLAKE_API/projects/$PROJECT_NAME" | grep -q '^200$'; then
+if dl_curl -o /dev/null -w '%{http_code}' "$DEVLAKE_API/projects/$PROJECT_NAME" | grep -q '^200$'; then
   ok "ya existe"
 else
   PROJ_PAYLOAD=$(jq -n --arg n "$PROJECT_NAME" --arg d "Onboarded by onboard-github-project.sh" \
     '{name:$n, description:$d, metrics:[{pluginName:"dora", pluginOption:"", enable:true}]}')
-  curl -fsS -X POST -H 'Content-Type: application/json' -d "$PROJ_PAYLOAD" \
+  dl_curl -X POST -H 'Content-Type: application/json' -d "$PROJ_PAYLOAD" \
     "$DEVLAKE_API/projects" >/dev/null
   ok "creado (con DORA habilitado)"
 fi
 
 # ---------- 7. blueprint: mergear nuestra connection ----------
 log "Blueprint: bindeando connection→scope al project"
-BP_JSON=$(curl -fsS "$DEVLAKE_API/blueprints?projectName=$PROJECT_NAME")
+BP_JSON=$(dl_curl "$DEVLAKE_API/blueprints?projectName=$PROJECT_NAME")
 BP_ID=$(jq '.blueprints[0].id // empty' <<<"$BP_JSON")
 if [[ -z "$BP_ID" ]]; then
   err "no encontre blueprint para project $PROJECT_NAME"; exit 1
@@ -217,20 +229,20 @@ PATCH_BODY=$(jq --argjson new "$NEW_CONN_BLOCK" --arg ta "$TIME_AFTER" '
   | .connections = ((.connections // []) | map(select(.pluginName!="github" or .connectionId!=$new.connectionId)) + [$new])
   | {connections: .connections, timeAfter: $ta}
 ' <<<"$BP_JSON")
-curl -fsS -X PATCH -H 'Content-Type: application/json' -d "$PATCH_BODY" \
+dl_curl -X PATCH -H 'Content-Type: application/json' -d "$PATCH_BODY" \
   "$DEVLAKE_API/blueprints/$BP_ID" >/dev/null
 ok "blueprint $BP_ID actualizado (timeAfter=$TIME_AFTER)"
 
 # ---------- 8. trigger pipeline ----------
 log "Disparando pipeline inicial"
-PIPE_ID=$(curl -fsS -X POST "$DEVLAKE_API/blueprints/$BP_ID/trigger" | jq '.id')
+PIPE_ID=$(dl_curl -X POST "$DEVLAKE_API/blueprints/$BP_ID/trigger" | jq '.id')
 ok "pipeline id=$PIPE_ID lanzado"
 
 # poll
 STATUS=""
 START=$(date +%s)
 while :; do
-  STATUS=$(curl -fsS "$DEVLAKE_API/pipelines/$PIPE_ID" | jq -r '.status // ""')
+  STATUS=$(dl_curl "$DEVLAKE_API/pipelines/$PIPE_ID" | jq -r '.status // ""')
   case "$STATUS" in
     TASK_COMPLETED|TASK_FAILED|TASK_PARTIAL|TASK_CANCELLED) break ;;
   esac
@@ -240,7 +252,7 @@ while :; do
   if (( ELAPSED > 1800 )); then err "timeout >30min esperando pipeline"; exit 1; fi
 done
 
-PIPE_INFO=$(curl -fsS "$DEVLAKE_API/pipelines/$PIPE_ID")
+PIPE_INFO=$(dl_curl "$DEVLAKE_API/pipelines/$PIPE_ID")
 SPENT=$(jq -r '.spentSeconds' <<<"$PIPE_INFO")
 FIN=$(jq -r '.finishedTasks' <<<"$PIPE_INFO")
 TOT=$(jq -r '.totalTasks'    <<<"$PIPE_INFO")

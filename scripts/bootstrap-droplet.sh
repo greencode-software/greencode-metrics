@@ -121,6 +121,15 @@ fi
 # ---------- 4. secrets ----------
 log "Decriptando secrets via SOPS+age"
 export SOPS_AGE_KEY_FILE="$AGE_KEY_FILE"
+
+# Persistir SOPS_AGE_KEY_FILE en /root/.bashrc para shells interactivas futuras,
+# asi un admin puede correr `sops -d secrets/prod.env.sops` sin tener que setear
+# la env var cada vez.
+if ! grep -q "SOPS_AGE_KEY_FILE=$AGE_KEY_FILE" /root/.bashrc 2>/dev/null; then
+  echo "export SOPS_AGE_KEY_FILE=$AGE_KEY_FILE" >> /root/.bashrc
+  ok "SOPS_AGE_KEY_FILE persistido en /root/.bashrc"
+fi
+
 SOPS_FILE="$INSTALL_DIR/secrets/prod.env.sops"
 ENV_FILE="$INSTALL_DIR/docker/.env"
 if [[ ! -f "$SOPS_FILE" ]]; then

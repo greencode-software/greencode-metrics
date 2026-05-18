@@ -45,8 +45,14 @@
         rewrite * /api/plugins/webhook{uri}
     }
 
-    # ---------- 2) resto de la API DevLake: basic auth ----------
-    handle /api/* {
+    # ---------- 2) API DevLake (paths especificos): basic auth ----------
+    # IMPORTANTE: NO usar /api/* generico porque Grafana ALSO usa /api/ para sus
+    # propias llamadas internas (/api/user, /api/org, /api/datasources, etc.).
+    # Si mandamos /api/* a DevLake, Grafana frontend se rompe.
+    # Por suerte los namespaces no se solapan: DevLake usa /api/{projects,blueprints,
+    # pipelines,plugins,scopes}, Grafana usa /api/{user,org,dashboards,etc}.
+    @devlake_admin path /api/projects /api/projects/* /api/blueprints /api/blueprints/* /api/pipelines /api/pipelines/* /api/scopes /api/scopes/* /api/plugins/*
+    handle @devlake_admin {
         basic_auth {
             {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
         }

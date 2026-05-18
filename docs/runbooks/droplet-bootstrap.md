@@ -14,8 +14,9 @@ Tiempo estimado: 45-60 min la primera vez, ~10 min en recovery.
 Antes del primer bootstrap, asegurarse que existen:
 
 - [ ] **Cuenta DigitalOcean** con metodo de pago configurado.
-- [ ] **Cloudflare** manejando DNS para `greencode.com.ar` (o Route 53 si preferis,
-      pero Cloudflare es gratis y suma WAF).
+- [ ] **DNS para `greencode.com.ar`**: actualmente en **AWS Route 53**. Sólo DNS; sin
+      proxy/WAF. Para este caso (admin tool detrás de basic auth + Google OAuth) alcanza.
+      Si en el futuro se quiere DDoS protection / esconder origin IP, mover a Cloudflare.
 - [ ] **age key pair** generado (encriptacion de secrets via SOPS):
   ```bash
   mkdir -p ~/.config/sops/age
@@ -68,10 +69,10 @@ Antes del primer bootstrap, asegurarse que existen:
    - Outbound: todo.
    - Apply al droplet.
 
-5. **DNS en Cloudflare**:
-   - A record `metrics.greencode.com.ar → <Reserved IP>`. Proxied: **OFF** la primera
-     vez (Caddy necesita resolver el dominio para obtener cert). Lo prendes despues.
-   - TTL 300.
+5. **DNS en Route 53**:
+   - AWS Console → Route 53 → Hosted zones → `greencode.com.ar` → Create record.
+   - Record name: `metrics`, Type: **A**, Value: `<Reserved IP>`, TTL 300, Simple routing.
+   - Propagacion <1 min.
 
 6. **Verificar DNS antes de seguir**:
    ```bash
@@ -124,9 +125,8 @@ El script es idempotente. Si falla a la mitad, lo re-corres y retoma.
 - [ ] Browser a `https://metrics.greencode.com.ar` → Grafana login con Google.
 - [ ] Browser a `https://metrics.greencode.com.ar/admin` → prompt basic auth → Config UI.
 
-Despues de validado, **activar Cloudflare proxy** (la nube naranja) sobre el A record.
-Cloudflare emitira su cert al edge y Caddy seguira con el suyo al origin. Esto te da
-WAF + DDoS + ocultar la IP del droplet.
+DNS via Route 53: nada mas que hacer aca despues de validar (no hay proxy que activar).
+Si en el futuro se decide mover a Cloudflare, ver "Migracion DNS" mas abajo.
 
 ---
 

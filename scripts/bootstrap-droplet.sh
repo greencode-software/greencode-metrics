@@ -111,7 +111,7 @@ if [[ ! -f "$SOPS_FILE" ]]; then
   err "  sops -e secrets/prod.env > secrets/prod.env.sops"
   exit 1
 fi
-sops -d "$SOPS_FILE" > "$ENV_FILE"
+sops -d --input-type dotenv --output-type dotenv "$SOPS_FILE" > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 ok ".env escrito ($(wc -l < "$ENV_FILE") lineas)"
 

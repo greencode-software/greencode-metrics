@@ -121,6 +121,7 @@ Remote: `git@github.com:greencode-software/greencode-metrics.git`, branch `maste
 4. **`?` en URLs en zsh** se globa, romper curl. Single-quoting de URLs cuando tengan query string.
 5. **`/etc/sops/age/keys.txt`** es la única forma que el droplet puede desencriptar `secrets/prod.env.sops`. SCP-eada una sola vez en el primer bootstrap. Si se pierde, hay que rotar age key y re-encriptar todo.
 6. **CONVENTIONS.md** tenía una inconsistencia con CLAUDE.md (labels IA vs cohortes); se resolvió por CLAUDE.md (commit `3f204eb`). Criterio del usuario: CLAUDE.md es el documento autoritativo.
+7. **`sops -d` para `prod.env.sops` SIEMPRE necesita `--input-type dotenv --output-type dotenv`**. La extension `.sops` no es auto-detectada por SOPS, asi que sin esos flags asume JSON y falla con `invalid character '#'`. El bootstrap script y el `.sops.yaml` ya lo tienen documentado/aplicado.
 
 ---
 

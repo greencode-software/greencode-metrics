@@ -8,9 +8,14 @@
 #
 # La public key (la linea de abajo en `age:`) es publica y va commiteada.
 #
-# Para encriptar:    sops -e secrets/prod.env > secrets/prod.env.sops
-# Para desencriptar: sops -d secrets/prod.env.sops > /tmp/.env
+# Para encriptar:    sops -e --input-type dotenv --output-type dotenv \
+#                         secrets/prod.env > secrets/prod.env.sops
+# Para desencriptar: sops -d --input-type dotenv --output-type dotenv \
+#                         secrets/prod.env.sops > /tmp/.env
 #                    (requiere SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt)
+#
+# Los --input-type / --output-type son obligatorios porque la extension .sops
+# no es auto-detectada por SOPS (a diferencia de .yaml o .json).
 #
 # Rotar la age key:
 #   1) generar pareja nueva: age-keygen -o ~/.config/sops/age/keys-new.txt

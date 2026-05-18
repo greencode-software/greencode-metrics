@@ -37,7 +37,11 @@ Antes del primer bootstrap, asegurarse que existen:
   # solo el lider tecnico tiene acceso plain — luego se borra:
   cp secrets/prod.env.example secrets/prod.env
   $EDITOR secrets/prod.env               # poner valores reales
-  sops -e secrets/prod.env > secrets/prod.env.sops
+  # --input-type/--output-type son obligatorios porque la extension .sops no es
+  # auto-detectada por SOPS. Si los olvidas, el archivo se encripta como binary
+  # blob y luego falla al decrypt en el droplet.
+  sops -e --input-type dotenv --output-type dotenv \
+       secrets/prod.env > secrets/prod.env.sops
   rm secrets/prod.env                    # ELIMINAR plain text local
   git add secrets/prod.env.sops .sops.yaml
   git commit -m "secrets: prod env encriptado"
@@ -235,3 +239,4 @@ Tiempo: 15-20 min si tenes el Volume + Reserved IP intactos.
 | Webhook deploys no aparece en DORA | falta job `org` que hace project_mapping | re-correr blueprint del project; o esperar cron diario |
 | Cloudflare da error 521 (web server is down) | Caddy crasheó o no escucha en 80/443 | `docker compose logs caddy`; chequear que ports 80/443 esten libres |
 | `sops -d` falla con "no key could decrypt the data" | age key faltante o no es la correcta | verificar `/etc/sops/age/keys.txt` esta presente y permisos 600; la public key del .sops.yaml tiene que matchear con la private |
+| `sops -d` falla con "Could not unmarshal input data: invalid character '#'" | extension `.sops` no es auto-detectada por SOPS | agregar `--input-type dotenv --output-type dotenv` en el comando |

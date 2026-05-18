@@ -1,7 +1,7 @@
 # Greencode Engineering Metrics — Convenciones
 
 Este documento define cómo se debe instrumentar **cada proyecto** de Greencode para
-alimentar el stack central de métricas (DevLake en `metrics.greencode.com.ar`).
+alimentar el stack central de métricas (DevLake en `metrics.greencodesoftware.com`).
 
 Forma parte del checklist de kickoff de proyecto y es auditable bajo ISO 9001.
 
@@ -47,7 +47,7 @@ En cada proyecto Sentry, crear una **Alert Rule** "Production Incident":
 
 - Condición: `event.level >= error` AND `environment = production`
 - Acción: Send a notification via Webhook
-- URL: `https://metrics.greencode.com.ar/api/plugins/webhook/1/issues`
+- URL: `https://metrics.greencodesoftware.com/api/plugins/webhook/1/issues`
 - Payload: usar el template documentado en `/docs/sentry-webhook-payload.md`
 
 Resolver el issue en Sentry cierra el incident en DevLake automáticamente (MTTR).

@@ -16,7 +16,7 @@ author: 'Greencode Software'
 #       result:         ${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}
 #
 # El secret DEVLAKE_DEPLOY_WEBHOOK se gestiona a nivel organization:
-#   https://metrics.greencode.com.ar/api/plugins/webhook/connections/<id>/deployments
+#   https://metrics.greencodesoftware.com/api/plugins/webhook/connections/<id>/deployments
 # Lo provee el equipo de Plataforma; los repos solo lo consumen.
 
 inputs:

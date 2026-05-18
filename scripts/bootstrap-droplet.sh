@@ -44,7 +44,7 @@ fi
 log "Instalando paquetes base"
 if ! command -v docker >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y -qq ca-certificates curl gnupg lsb-release git python3 python3-pip jq awscli
+  apt-get install -y -qq ca-certificates curl gnupg lsb-release git python3 python3-pip jq unzip
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
     | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -69,6 +69,23 @@ else
 fi
 
 command -v age >/dev/null 2>&1 || { apt-get install -y -qq age; ok "age instalado"; }
+
+# awscli v2 - via binary oficial. En Ubuntu 24.04 el paquete 'awscli' (v1) fue
+# removido del repo principal por EOL de Python; v2 se distribuye por AWS direct.
+if ! command -v aws >/dev/null 2>&1; then
+  ARCH=$(uname -m)
+  case "$ARCH" in
+    x86_64) AWS_ZIP_URL="https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" ;;
+    aarch64|arm64) AWS_ZIP_URL="https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" ;;
+    *) err "arquitectura desconocida: $ARCH"; exit 1 ;;
+  esac
+  tmpdir=$(mktemp -d)
+  ( cd "$tmpdir" && curl -fsSL "$AWS_ZIP_URL" -o awscliv2.zip && unzip -q awscliv2.zip && ./aws/install --update )
+  rm -rf "$tmpdir"
+  ok "aws cli v2 instalado ($(aws --version 2>&1))"
+else
+  ok "aws cli ya estaba"
+fi
 
 # ---------- 2. Block Storage para /var/lib/docker ----------
 log "Configurando DO Block Storage para Docker"

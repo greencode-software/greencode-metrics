@@ -73,15 +73,19 @@ Antes del primer bootstrap, asegurarse que existen:
    - Outbound: todo.
    - Apply al droplet.
 
-5. **DNS en Route 53**:
+5. **DNS en Route 53** (DOS records, ambos al mismo Reserved IP):
    - AWS Console → Route 53 → Hosted zones → `greencodesoftware.com` → Create record.
-   - Record name: `metrics`, Type: **A**, Value: `<Reserved IP>`, TTL 300, Simple routing.
-   - Propagacion <1 min.
+   - Crear:
+     - `devlake.greencodesoftware.com`     A  `<Reserved IP>`  TTL 300  (Grafana)
+     - `api.devlake.greencodesoftware.com` A  `<Reserved IP>`  TTL 300  (DevLake API)
+   - El segundo subdominio existe porque Grafana y DevLake comparten el namespace
+     /api/ y necesitan separarse a nivel hostname. Propagacion <1 min.
 
 6. **Verificar DNS antes de seguir**:
    ```bash
    dig +short devlake.greencodesoftware.com
-   # debe devolver la Reserved IP
+   dig +short api.devlake.greencodesoftware.com
+   # ambos deben devolver la Reserved IP
    ```
 
 ---
@@ -122,9 +126,9 @@ El script es idempotente. Si falla a la mitad, lo re-corres y retoma.
 
 - [ ] `dig +short devlake.greencodesoftware.com` → Reserved IP correcta.
 - [ ] `curl -I https://devlake.greencodesoftware.com` → 200 OK, header `Server: Caddy`.
-- [ ] `curl -I https://devlake.greencodesoftware.com/api/plugins/webhook/connections`
+- [ ] `curl -I https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections`
       → 200 con JSON (path publico).
-- [ ] `curl -I https://devlake.greencodesoftware.com/api/projects` → 401 Unauthorized
+- [ ] `curl -I https://api.devlake.greencodesoftware.com/api/projects` → 401 Unauthorized
       (basic auth protegiendo).
 - [ ] Browser a `https://devlake.greencodesoftware.com` → Grafana login con Google.
 - [ ] Browser a `https://devlake.greencodesoftware.com/admin` → prompt basic auth → Config UI.
@@ -138,12 +142,12 @@ Si en el futuro se decide mover a Cloudflare, ver "Migracion DNS" mas abajo.
 
 ```bash
 # desde tu Mac (no en el droplet), con DEVLAKE_API apuntando al stack publico:
-DEVLAKE_API="https://devlake.greencodesoftware.com/api" \
+DEVLAKE_API="https://api.devlake.greencodesoftware.com/api" \
   ./scripts/onboard-github-project.sh \
     tallone-sistema-de-gestion elamonica/tallone
 
 # para proyectos de la org greencode-software, usar la misma cuenta gh:
-DEVLAKE_API="https://devlake.greencodesoftware.com/api" \
+DEVLAKE_API="https://api.devlake.greencodesoftware.com/api" \
   ./scripts/onboard-github-project.sh \
     pinvest-platform greencode-software/pinvest-api
 ```
@@ -165,7 +169,7 @@ En el stack productivo hace falta crear dos webhook connections distintas:
 una para deploys, otra para incidents. Ejecutar **una vez**:
 
 ```bash
-WEBHOOK_API="https://devlake.greencodesoftware.com/api/plugins/webhook/connections"
+WEBHOOK_API="https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections"
 AUTH="-u greencode:<basic-pass>"
 
 # deploys
@@ -181,9 +185,9 @@ curl -fsS $AUTH -X POST -H 'Content-Type: application/json' \
 
 Luego:
 - En GitHub org secrets, crear `DEVLAKE_DEPLOY_WEBHOOK` con valor:
-  `https://devlake.greencodesoftware.com/api/plugins/webhook/connections/1/deployments`
+  `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/1/deployments`
 - En cada proyecto Sentry, crear un Alert Rule → action Webhook con URL:
-  `https://devlake.greencodesoftware.com/api/plugins/webhook/connections/2/issues`
+  `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/2/issues`
 
 Despues de eso, los datos empiezan a fluir solos a las dashboards DORA.
 

@@ -1,13 +1,22 @@
-# Caddy reverse proxy para el stack DevLake en produccion (EC2).
+# Caddy reverse proxy para el stack DevLake en produccion (DigitalOcean Droplet).
 #
-# Comportamiento:
-#   - TLS automatico via Let's Encrypt (ACME). Renueva solo.
-#   - / (Grafana) y /admin (Config UI) requieren auth distinta.
-#   - /api/plugins/webhook/*  → publico (Sentry y dora-deploy lo necesitan).
-#   - /api/*                  → basic auth (no exponer endpoints de connections/projects).
+# Arquitectura de hostnames:
+#   - {$DOMAIN}        (ej: devlake.greencodesoftware.com) -> Grafana, login Google OAuth
+#   - api.{$DOMAIN}    (ej: api.devlake.greencodesoftware.com) -> DevLake REST API
+#                       /api/plugins/webhook/*  publico (Sentry, dora-deploy)
+#                       /api/*                  basic auth (admin endpoints)
 #
-# Para activarlo basta con:
+# La separacion en subdominios es obligatoria porque Grafana y DevLake comparten
+# el namespace /api/ (Grafana usa /api/user, /api/plugins, etc.; DevLake usa
+# /api/projects, /api/plugins, etc.). Path-based routing no alcanza para
+# distinguirlos.
+#
+# Activacion:
 #   docker compose -f docker/docker-compose.yml -f docker/caddy/docker-compose.caddy.yml up -d
+#
+# DNS requerido en Route 53 (ambos -> Reserved IP del droplet):
+#   devlake.greencodesoftware.com      A  <IP>
+#   api.devlake.greencodesoftware.com  A  <IP>
 #
 # Variables tomadas de .env (decryptado por SOPS al boot):
 #   DOMAIN, ACME_EMAIL, BASIC_AUTH_USER, BASIC_AUTH_HASH
@@ -19,11 +28,12 @@
     # acme_dns cloudflare {env.CF_API_TOKEN}
 }
 
+# ============================================================
+# SITE 1: Grafana (Google OAuth)
+# ============================================================
 {$DOMAIN} {
-    # ---------- compresion ----------
     encode zstd gzip
 
-    # ---------- logging ----------
     log {
         output file /var/log/caddy/access.log {
             roll_size 50mb
@@ -32,48 +42,58 @@
         format json
     }
 
-    # ---------- 1) webhook publico: NO auth ----------
-    # Sentry alerta y dora-deploy action postean aca. Tienen que ser alcanzables sin
-    # credenciales. La proteccion real es el HMAC signing (Sentry) y la URL contiene
-    # el connection-id que es secreto-por-oscuridad. Ver runbook EC2 bootstrap.
+    # Todo va a Grafana. Su /api/ es para uso propio (user, org, dashboards, plugins
+    # de Grafana, etc.) y el auth lo maneja Grafana via Google OAuth.
+    reverse_proxy grafana:3000
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "no-referrer-when-downgrade"
+    }
+}
+
+# ============================================================
+# SITE 2: DevLake REST API (basic auth, salvo webhooks)
+# ============================================================
+api.{$DOMAIN} {
+    encode zstd gzip
+
+    log {
+        output file /var/log/caddy/access-api.log {
+            roll_size 50mb
+            roll_keep 7
+        }
+        format json
+    }
+
+    # ---------- 1) webhook publico (NO auth) ----------
+    # Sentry alerta y dora-deploy action postean aca. La proteccion real es:
+    # 1) la URL incluye un connection-id secreto-por-oscuridad,
+    # 2) HMAC signing en Sentry (configurable).
     handle_path /api/plugins/webhook/* {
         reverse_proxy devlake:8080 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
         }
-        # restore prefix
         rewrite * /api/plugins/webhook{uri}
     }
 
-    # ---------- 2) API DevLake (paths especificos): basic auth ----------
-    # IMPORTANTE: NO usar /api/* generico porque Grafana ALSO usa /api/ para sus
-    # propias llamadas internas (/api/user, /api/org, /api/datasources, etc.).
-    # Si mandamos /api/* a DevLake, Grafana frontend se rompe.
-    # Por suerte los namespaces no se solapan: DevLake usa /api/{projects,blueprints,
-    # pipelines,plugins,scopes}, Grafana usa /api/{user,org,dashboards,etc}.
-    @devlake_admin path /api/projects /api/projects/* /api/blueprints /api/blueprints/* /api/pipelines /api/pipelines/* /api/scopes /api/scopes/* /api/plugins/*
-    handle @devlake_admin {
+    # ---------- 2) resto de la API DevLake: basic auth ----------
+    handle /api/* {
         basic_auth {
             {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
         }
         reverse_proxy devlake:8080
     }
 
-    # ---------- 3) Config UI: acceso por SSH tunnel (no via Caddy) ----------
-    # La Config UI de DevLake es un SPA que sirve assets desde / (no soporta subpath),
-    # asi que NO se puede exponer en /admin sin subdominio dedicado o build custom.
-    # Por ahora: acceso via SSH tunnel desde la maquina del admin:
-    #   ssh -L 4000:127.0.0.1:4000 root@<droplet-ip>
-    #   abrir http://localhost:4000  -> Config UI directo
-    # La proteccion real es no exponer 4000 fuera del droplet (ver caddy overlay).
-    # Futuro mejorable: subdominio dedicado tipo admin-devlake.greencodesoftware.com.
-
-    # ---------- 4) default: Grafana (con su propio auth Google OAuth) ----------
+    # ---------- 3) cualquier otra cosa -> 404 ----------
+    # La raiz / del subdominio API no sirve nada utill.
     handle {
-        reverse_proxy grafana:3000
+        respond "DevLake API. Endpoints under /api/." 404
     }
 
-    # ---------- headers de seguridad basicos ----------
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options    "nosniff"

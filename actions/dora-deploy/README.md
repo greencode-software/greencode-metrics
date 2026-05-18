@@ -65,7 +65,7 @@ Lo provee el equipo de Plataforma cuando se levanta DevLake; no se rota por proy
 
 Formato:
 ```
-https://devlake.greencodesoftware.com/api/plugins/webhook/connections/<conn-id>/deployments
+https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/<conn-id>/deployments
 ```
 
 El `<conn-id>` corresponde a la "webhook connection" creada en DevLake especificamente
@@ -86,7 +86,7 @@ En el stack DevLake, una vez configurado:
 
 ```bash
 curl -u <basic-user>:<basic-pass> \
-  https://devlake.greencodesoftware.com/api/cicd_deployment_commits \
+  https://api.devlake.greencodesoftware.com/api/cicd_deployment_commits \
   | jq '.[] | select(.environment=="PRODUCTION")'
 ```
 

@@ -47,7 +47,7 @@ En cada proyecto Sentry, crear una **Alert Rule** "Production Incident":
 
 - Condición: `event.level >= error` AND `environment = production`
 - Acción: Send a notification via Webhook
-- URL: `https://devlake.greencodesoftware.com/api/plugins/webhook/1/issues`
+- URL: `https://api.devlake.greencodesoftware.com/api/plugins/webhook/1/issues`
 - Payload: usar el template documentado en `/docs/sentry-webhook-payload.md`
 
 Resolver el issue en Sentry cierra el incident en DevLake automáticamente (MTTR).

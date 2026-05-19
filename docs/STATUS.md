@@ -1,127 +1,138 @@
 # STATUS — Greencode Metrics
 
 > Documento vivo. Se sobrescribe entero cada sesión. La historia queda en `git log`.
-> Última actualización: **2026-05-15**.
-> Si abrís una sesión nueva con Claude Code, este es el primer archivo que conviene
-> que lea (después de `CLAUDE.md` y `docs/CONVENTIONS.md`).
+> Última actualización: **2026-05-19**.
+>
+> Orden de lectura sugerido para retomar contexto frío:
+> `CLAUDE.md` → `docs/CONVENTIONS.md` → este archivo (STATUS) → `docs/ROADMAP.md`.
+>
+> Si sos un teammate nuevo, leé `ONBOARDING.md` (en root) primero.
 
 ---
 
 ## TL;DR
 
-- **Etapa 1** (stack local): ✅ funcionando. 4 containers up, tallone como piloto ingerido (274 commits, 0 PRs, 0 issues — el repo no usa PRs).
-- **Etapa 2** (piloto): ✅ cerrado con `elamonica/tallone` → project `tallone-sistema-de-gestion`.
-- **Etapa 3** (3 proyectos más + action de deploys): 🟡 script reusable listo y testeado; action `dora-deploy` lista; falta onboardear repos reales y mergear la action en cada workflow.
-- **Etapa 4** (n8n + Slack): ⏳ pendiente. Era el próximo trabajo cuando se escribió este STATUS.
-- **Etapa 5** (plugin Kimai): ⏳ pendiente.
-- **Etapa 6** (deploy productivo): 🟡 assets listos para **DigitalOcean** (no AWS). Falta levantar el droplet en sí — bloqueado en input del usuario (ver "Pendiente del usuario" abajo).
-- **Etapa 7** (MCP + Slack agent): ⏳ futuro.
+- **Stack productivo en DigitalOcean: ARRIBA** ✅
+  - URL Grafana:     https://devlake.greencodesoftware.com (Google OAuth)
+  - URL DevLake API: https://api.devlake.greencodesoftware.com (basic auth)
+  - Reserved IP:     `134.199.247.25`
+  - Droplet:         Premium AMD 2vCPU / 4GB RAM / 80GB NVMe / NYC3 (~$28/mo)
+  - Volume:          `devlake-data` 50GB montado en `/var/lib/docker`
+  - TLS:             Let's Encrypt automático (Caddy) en ambos subdominios
+  - Backups:         cron weekly → DO Spaces `greencode-devlake-backups`
 
-Decisión de provider productivo: **DigitalOcean NYC3** (no AWS). Razones documentadas en commit `e52cbce`. Cifrado de secrets: **SOPS+age** (no KMS).
+- **Pendiente inmediato**: validar end-to-end + re-onboardear `tallone-sistema-de-gestion` contra prod. Ver `docs/ROADMAP.md` §"Bloqueante inmediato".
 
----
-
-## Estado del entorno local
-
-```
-docker compose ps (en docker/docker-compose.yml):
-  greencode-devlake-mysql       MySQL 8.0      127.0.0.1:3306
-  greencode-devlake             DevLake v1.0.2 0.0.0.0:8088 → 8080
-  greencode-devlake-grafana     Grafana 11.6   0.0.0.0:3001 → 3000
-  greencode-devlake-config-ui   ConfigUI       0.0.0.0:4000
-```
-
-**Puertos no son los default** porque hay sibling stacks en la Mac (`cafta-dr-adminer-1` ocupa 8080, `closup-scrapper-grafana-1` ocupa 3000). En productivo vuelven a 3000/8080 detrás de Caddy.
-
-**Grafana login**: `admin / admin` no funciona por API (el usuario cambió el password en el primer login del browser). No es bloqueante para el uso por UI.
-
-**Secrets locales** (`docker/.env`, gitignoreado): dummy values, sólo para dev. NO son los de prod.
-
-### Datos ingeridos hoy
-
-| Métrica | Valor |
-|---|---|
-| Project en DevLake | `tallone-sistema-de-gestion` |
-| Connection | id=2, `tallone-sistema-de-gestion-github`, `enableGraphql=false` |
-| Repo | `elamonica/tallone` (githubId 1184731792) |
-| Commits | 274 (autor único: Ezequiel Lamonica) |
-| Rango fechas commits | 2026-03-06 a 2026-05-06 |
-| PRs / issues / CI runs | 0 (el repo no usa PRs ni issues en GH; sin Actions) |
-| Pipeline más reciente | id=5, TASK_COMPLETED, 27s, 6/6 tasks |
-
-### URLs locales útiles
-
-- Engineering Overview: http://localhost:3001/d/ZF6abXX7z/engineering-overview?var-project=tallone-sistema-de-gestion
-- GitHub dashboard: http://localhost:3001/d/KXWvOFQnz/github
-- Config UI: http://localhost:4000
-- DevLake API: http://localhost:8088
-
-⚠️ **Cuidado con time range default de Grafana** — varios dashboards default a `now-6h`. Los commits de tallone son de hace 9-70 días. Pisar el selector a "Last 90 days" o "Last 6 months".
+- **Etapas del roadmap original** (`CLAUDE.md`):
+  - 1 (local) ✅ · 2 (piloto tallone) ✅ · 6 (deploy prod) ✅
+  - 3 (3 proyectos + dora-deploy) 🟡 · 4 (n8n+Slack) ⏳ · 5 (Kimai) ⏳ · 7 (MCP) ⏳
 
 ---
 
-## Decisiones de diseño tomadas en esta línea de trabajo
+## Stack productivo — detalles operativos
 
-1. **GraphQL apagado en la connection GitHub.** Workaround porque el `gho_*` del keyring no tiene scope `read:user`. Trabaja por REST (más lento pero suficiente para 1-5 proyectos). Re-activar cuando el token tenga `read:user`.
-2. **Connection naming = `<project>-github`** (impuesto por `scripts/onboard-github-project.sh`). Mejor que naming ad-hoc.
-3. **Scope payload del plugin github**: `name`=repo solo (ej `tallone`), `fullName`=owner/repo (ej `elamonica/tallone`). Confundirlos da `repos//milestones` 404.
-4. **DevLake NO tiene plugin Sentry pull.** Confirmado en `/plugins`. La integración Sentry va por **webhook push**, lo que requiere URL pública (= etapa 6 para que tenga sentido).
-5. **Cohortes temporales para tracking IA** (no labels en PRs). Documentado en `CONVENTIONS.md §4` y `docs/baselines.yml`.
-6. **DigitalOcean** como cloud provider. SOPS+age para secrets.
-7. **Multi-token soportado** en la onboarding script via `--token-env`/`--token-file`, manteniendo `gh auth token` como default.
-
----
-
-## Roadmap con commits
+### Containers (`docker compose ps` en droplet)
 
 ```
-5cf5ddb  onboard-github: --token-env y --token-file (multi-source)
-e52cbce  Migrar etapa 6 a DigitalOcean Droplet
-3f204eb  CONVENTIONS §4: cohortes temporales en vez de labels
-0c1cc12  Etapa 6: assets para deploy productivo (action + Caddy + bootstrap + SOPS + runbook)
-ef988dc  Onboarding piloto tallone + port remap local
-07984d2  Initial scaffold
+greencode-devlake-mysql       mysql:8.0                       127.0.0.1:3306
+greencode-devlake             apache/devlake:v1.0.2           interno
+greencode-devlake-grafana     apache/devlake-dashboard:v1.0.2 interno
+greencode-devlake-config-ui   apache/devlake-config-ui:v1.0.2 127.0.0.1:4000 (SSH tunnel only)
+greencode-devlake-caddy       caddy:2.8-alpine                0.0.0.0:80, 443, 443/udp
 ```
 
-Remote: `git@github.com:greencode-software/greencode-metrics.git`, branch `master`.
+### URLs productivas
 
----
-
-## Pendiente del usuario (bloqueantes para etapa 6)
-
-| # | Item | Para qué |
+| Servicio | URL | Auth |
 |---|---|---|
-| 1 | Generar age key (`age-keygen`), pasarme public key | Setear en `.sops.yaml`, encriptar `prod.env` real |
-| 2 | Crear Droplet (Premium AMD 4GB) + Block Storage Volume `devlake-data` + Reserved IP | Provisioning |
-| 3 | Pasarme la Reserved IP | A record en Cloudflare |
-| 4 | Crear cliente Google OAuth para Grafana | Reemplazar admin/admin |
-| 5 | Definir fecha "AI adoption start" para tallone (opcional) | Llenar `docs/baselines.yml` |
-| 6 | Decidir si crear usuario de servicio en GH org `greencode-software` | Actualmente usa cuenta personal `elamonica` para todo. El usuario explicitamente difirió esta decisión. |
-| 7 | Cuando estén las webhook connections en DevLake productivo, configurar Sentry alert rules | Habilita CFR/MTTR de DORA |
+| Grafana | https://devlake.greencodesoftware.com | Google OAuth (`@greencodesoftware.com`) |
+| DevLake API admin | https://api.devlake.greencodesoftware.com/api/... | Basic auth (user `greencode`) |
+| DevLake webhook público | https://api.devlake.greencodesoftware.com/api/plugins/webhook/... | Sin auth (URL secreta) |
+| Config UI | `ssh -L 4000:127.0.0.1:4000 root@134.199.247.25` → http://localhost:4000 | SSH tunnel |
+
+### Subdominios — por qué hay dos
+
+Grafana y DevLake comparten el namespace `/api/` (ambos exponen `/api/user`, `/api/plugins`, etc.). Path-based routing en Caddy no alcanza para separarlos. Solución: subdominio para la API. Ver Caddyfile §"Arquitectura de hostnames".
+
+### Datos en prod hoy
+
+**Vacío.** El droplet se levantó pero NO se ingestó nada todavía. La re-onboarding de `tallone-sistema-de-gestion` está pendiente (ver ROADMAP).
 
 ---
 
-## Lo que se puede avanzar sin esos inputs
+## Stack local — para desarrollo
 
-| Item | Estado | Notas |
-|---|---|---|
-| **n8n workflow + Slack alertas** (etapa 4) | sin empezar | Bocetar como service del compose + workflow JSON exportable. Próximo trabajo natural si nadie redirecciona. |
-| **Plugin Kimai** (etapa 5) | sin empezar | Necesita un brief del usuario sobre qué endpoints expone su Kimai. |
-| **Dashboard custom Greencode** | sin empezar | Un Grafana JSON que muestre todos los proyectos en una tabla resumen tipo "performance scorecard". Complementa los prebuilt. |
-| Re-activar GraphQL en connection | bloqueado | `gh auth refresh -h github.com -s read:user`. Sólo afecta velocidad. |
-| Tag `v1` del repo | bloqueado | Para que `dora-deploy@v1` resuelva en los workflows consumidores. Hacer cuando el usuario diga "está listo". |
+Funcional. Puertos remapeados por sibling stacks en la Mac del líder técnico (`cafta-dr-adminer-1` ocupa 8080, `closup-scrapper-grafana-1` ocupa 3000):
+
+```
+greencode-devlake-mysql       127.0.0.1:3306
+greencode-devlake             0.0.0.0:8088 → 8080
+greencode-devlake-grafana     0.0.0.0:3001 → 3000
+greencode-devlake-config-ui   0.0.0.0:4000
+```
+
+Para correr local: `cp secrets/prod.env.example docker/.env`, editar con valores dummy, `cd docker && docker compose up -d`. NO usa Caddy en local. Grafana login por usuario/pass local (no Google).
+
+---
+
+## Decisiones de diseño activas
+
+1. **Cohortes temporales para AI tracking**, no labels en PRs. (`docs/CONVENTIONS.md §4`)
+2. **Connection naming convention**: `<project-name>-github` impuesto por `scripts/onboard-github-project.sh`.
+3. **Scope payload de plugin github**: `name`=repo solo (ej `tallone`), `fullName`=`owner/repo`.
+4. **GraphQL apagado** en la connection GitHub porque el `gho_*` del keyring del líder no tiene scope `read:user`. Re-activar cuando el PAT lo tenga.
+5. **DigitalOcean NYC3** como cloud provider (no AWS). SOPS+age (no KMS) para secrets.
+6. **Subdomain split** para Grafana vs DevLake API. Forzoso por el conflicto de namespace `/api/`.
+7. **DevLake NO tiene plugin Sentry pull** (confirmado en `/plugins`). Integración Sentry va por webhook push.
+8. **Config UI accesible solo via SSH tunnel** en prod. La SPA no se puede servir desde un subpath sin build custom.
+9. **Repo público** (greencode-software/greencode-metrics). Habilita que la composite action `dora-deploy` sea consumible desde otros repos sin parametrizar checkouts con PAT.
 
 ---
 
 ## Gotchas / cosas que aprender de nuevo es caro
 
-1. **Token gh activo vs keyring**: `GITHUB_TOKEN` env var sobreescribe al keyring. Si el activo no tiene acceso a un repo, `GITHUB_TOKEN= gh ...` cae al keyring (`gho_*`). La onboarding script lo detecta solo.
-2. **No imprimir tokens nunca** — ni prefijos, ni longitud, ni nada. Pipear inline al destino. Memoria del usuario lo confirmó como regla durable (commit log no, pero está en mi `~/.claude/projects/.../memory/`).
-3. **DevLake webhook plugin tiene 2 connections distintas** en prod (una para `deploys`, otra para `incidents`). Documentado en el runbook.
-4. **`?` en URLs en zsh** se globa, romper curl. Single-quoting de URLs cuando tengan query string.
-5. **`/etc/sops/age/keys.txt`** es la única forma que el droplet puede desencriptar `secrets/prod.env.sops`. SCP-eada una sola vez en el primer bootstrap. Si se pierde, hay que rotar age key y re-encriptar todo.
-6. **CONVENTIONS.md** tenía una inconsistencia con CLAUDE.md (labels IA vs cohortes); se resolvió por CLAUDE.md (commit `3f204eb`). Criterio del usuario: CLAUDE.md es el documento autoritativo.
-7. **`sops -d` para `prod.env.sops` SIEMPRE necesita `--input-type dotenv --output-type dotenv`**. La extension `.sops` no es auto-detectada por SOPS, asi que sin esos flags asume JSON y falla con `invalid character '#'`. El bootstrap script y el `.sops.yaml` ya lo tienen documentado/aplicado.
+1. **`sops -d` para `prod.env.sops` SIEMPRE necesita `--input-type dotenv --output-type dotenv`**. La extensión `.sops` no es auto-detectada → sin los flags, sops asume JSON y falla con "invalid character '#'".
+2. **`SOPS_AGE_KEY_FILE=/etc/sops/age/keys.txt`** debe estar seteado en cualquier shell que necesite descifrar. El bootstrap lo persiste en `/root/.bashrc` del droplet.
+3. **DO Reserved IP es inbound-only**. El egress sale por la IP nativa del droplet (`159.65.247.0`). Si alguna API externa pide whitelist, esa es la IP, no la Reserved.
+4. **DO Cloud Firewall por default no permite ICMP**. `ping` puede dar timeout aunque SSH y HTTPS funcionen. Es normal.
+5. **DO muestra "Configure your Volume"** con un mkfs+mount sugerido. IGNORAR. El bootstrap ya montó el Volume en `/var/lib/docker` (no en `/mnt/devlake_data` como sugiere DO).
+6. **1GB RAM es insuficiente** para el stack DevLake. Mínimo 4GB. Se confirmó por swap thrashing (Disk I/O 600 MB/s, CPU 100% sostenido).
+7. **Ubuntu 24.04 sacó `awscli` v1 del repo**. AWS CLI v2 se instala via binary oficial (el bootstrap lo hace).
+8. **Grafana usa `/api/`** para sus propias llamadas (`/api/user`, `/api/plugins`, etc.). NO se puede mandar `/api/*` a DevLake — los namespaces se solapan. Por eso el subdomain split.
+9. **`bash <(curl ...)` y `sudo` no se llevan bien**: sudo cierra los FDs del shell padre. Si ya sos root en el droplet, omitir el sudo.
+10. **`raw.githubusercontent.com` cachea ~5 min**. Si cambias un script y necesitás bypasear cache, usar URL `https://raw.../refs/heads/master/...` (sin cache).
+11. **No imprimir tokens nunca** — ni prefijos, ni longitud. Pipear inline al destino.
+
+---
+
+## Commits clave de la sesión productiva (2026-05-18)
+
+```
+6d774a8  caddy: separar DevLake API a subdominio api.{$DOMAIN}
+91ec806  onboard-github: soportar DEVLAKE_BASIC_AUTH
+b8fa60e  grafana: wire up Google OAuth + fix GF_SERVER_ROOT_URL para prod
+b925674  bootstrap-droplet: instalar AWS CLI v2 via binary oficial
+257c959  bootstrap-droplet: clonar via HTTPS (repo es publico)
+cbe7748  secrets: prod.env cifrado con SOPS+age
+35be739  Cambiar subdominio prod a devlake.greencodesoftware.com
+4530b83  .sops.yaml: age public key real
+```
+
+Remote: `git@github.com:greencode-software/greencode-metrics.git`, branch `master`, visibility **public**.
+
+---
+
+## Credenciales productivas
+
+Todas en **1Password** vault `greencode-metrics`, Secure Note "DevLake prod credentials (2026-05-18)":
+
+- `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` (Caddy → DevLake API admin)
+- `GRAFANA_ADMIN_PASSWORD` (fallback login a Grafana)
+- `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`
+- `ENCRYPTION_SECRET` (DevLake — sin esto se pierden todos los tokens guardados)
+- **age private key** (adjunta como archivo en el mismo item — sin ésta, prod.env.sops no se puede descifrar)
+
+⚠️ **El plain text de prod.env nunca debe quedar en disco**. Si necesitás editarlo, hacelo en `/tmp/`, encriptá, y borrá inmediatamente.
 
 ---
 
@@ -129,44 +140,44 @@ Remote: `git@github.com:greencode-software/greencode-metrics.git`, branch `maste
 
 ```
 .
-├── .sops.yaml                          # age public key (placeholder)
-├── CLAUDE.md                           # decisiones de diseño + roadmap (no editar sin consenso)
-├── README.md                           # vacío todavía
-├── actions/dora-deploy/
-│   ├── action.yml                      # composite action: notifica deploys a DevLake
-│   └── README.md
+├── .sops.yaml                          # age public key (real, no placeholder)
+├── CLAUDE.md                           # decisiones de diseño + roadmap
+├── ONBOARDING.md                       # guía 30 min para nuevo teammate
+├── README.md                           # (vacío todavía)
+├── actions/dora-deploy/                # composite action GH para notificar deploys
 ├── docker/
-│   ├── .env                            # dummy local (gitignored)
-│   ├── docker-compose.yml              # stack base (mysql + devlake + grafana + config-ui)
+│   ├── .env                            # local dummy (gitignored)
+│   ├── docker-compose.yml              # stack base
 │   └── caddy/
-│       ├── Caddyfile                   # TLS + reverse proxy + basic auth
-│       └── docker-compose.caddy.yml    # overlay para sumar Caddy en prod
+│       ├── Caddyfile                   # 2 site blocks: devlake.* + api.devlake.*
+│       └── docker-compose.caddy.yml    # overlay prod (suma Caddy + cierra puertos)
 ├── docs/
-│   ├── CONVENTIONS.md                  # cómo instrumentar un proyecto Greencode
+│   ├── CONVENTIONS.md                  # cómo instrumentar un proyecto
 │   ├── STATUS.md                       # este archivo
-│   ├── baselines.yml                   # fechas AI adoption start por proyecto
+│   ├── ROADMAP.md                      # pendientes priorizados
+│   ├── baselines.yml                   # AI adoption start por proyecto
 │   └── runbooks/
 │       └── droplet-bootstrap.md        # paso a paso DO end-to-end
-├── grafana-custom/                     # vacío (futuro: dashboards JSON exportados)
+├── grafana-custom/                     # vacío (futuro: dashboards JSON)
 ├── plugins/kimai/                      # vacío (futuro: plugin PyDevLake)
 ├── scripts/
 │   ├── bootstrap-droplet.sh            # provisioning idempotente del droplet
-│   └── onboard-github-project.sh       # onboarding idempotente de un repo a DevLake
+│   └── onboard-github-project.sh       # onboarding idempotente repo → DevLake
 └── secrets/
-    └── prod.env.example                # template; el real va encriptado en prod.env.sops
+    ├── prod.env.example                # template
+    └── prod.env.sops                   # cifrado, safe para git
 ```
 
 ---
 
 ## Para reanudar en una sesión nueva
 
-1. Leer `CLAUDE.md` (decisiones de diseño) y `docs/CONVENTIONS.md` (instrumentación por proyecto).
-2. Leer este archivo (STATUS).
-3. Revisar `git log --oneline -10` para ver lo último que se commiteó.
-4. `docker compose ps` desde `docker/` para ver si el stack local sigue arriba.
-5. Si el usuario pide algo de etapa 4+, este archivo dice "lo que se puede avanzar sin esos inputs". Si pide algo de etapa 6, mirar "Pendiente del usuario" y confirmar si esos inputs ya llegaron.
-
-Memorias persistentes del usuario para esta sesión (en `~/.claude/projects/.../memory/`):
-- `feedback_no_credential_inspection.md` — nunca imprimir/inspeccionar tokens.
-- `project_devlake_github_scopes.md` — scopes de PAT necesarios + semántica de `name`/`fullName`.
-- `project_cloud_provider.md` — DO/age/dominio prod.
+1. `cd ~/Documents/GreenCode/projects.nosync/greencode-metrics`
+2. Leer en orden: `CLAUDE.md` → `docs/CONVENTIONS.md` → este STATUS → `docs/ROADMAP.md`.
+3. `git log --oneline -10` para ver lo último.
+4. Si entrás como teammate nuevo: `ONBOARDING.md` te da todo en 30 min.
+5. Para validar prod desde la Mac:
+   ```bash
+   curl -I https://devlake.greencodesoftware.com -m 5         # → 302
+   curl -I https://api.devlake.greencodesoftware.com/api/projects -m 5  # → 401
+   ```

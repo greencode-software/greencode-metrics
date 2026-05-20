@@ -1,11 +1,31 @@
 # ROADMAP — Greencode Metrics
 
-Pendientes priorizados. Es complemento de `STATUS.md` (estado actual) y `CLAUDE.md`
-(visión + etapas originales). Cuando un item se completa, lo movés a STATUS.md
-con una línea en commits clave, y lo sacás de acá.
+> ⚠️ **Los items accionables se trackean ahora en
+> [GitHub Issues](https://github.com/greencode-software/greencode-metrics/issues)**
+> (creado 2026-05-20). Este archivo se mantiene como **snapshot histórico** del
+> primer breakdown — útil para entender por qué arrancamos así, no como
+> source-of-truth.
+>
+> Para tomar un trabajo, ir a Issues y filtrar por `label:afk` (autónomos) o
+> `label:hitl` (necesitan input humano). El backlog está bajo `label:phase-2`.
+>
+> Mapping aproximado de las secciones de abajo a issues:
+> - §0 Bloqueante inmediato → #1, #2, #3
+> - §1 Plugins faltantes → #4 (Sentry), #5 (SonarCloud), #6 (Bitbucket), #13 (GraphQL), #14 (GitLab), #15 (yBug)
+> - §2 Onboarding de proyectos → #7 (pinvest), #8 (closeup), #9 (risk-monitor), #10 (dora-deploy + tag v1)
+> - §3 Operación/DX → #11 (uptime), #12 (subdomain Config UI), #16 (auto-deploy), #17 (snapshots), #18 (rotation), #19 (logs), #20 (service user)
+> - §4 Infra a mediano plazo → #21 (Terraform), #22 (Managed MySQL), #23 (staging), #24 (Cloudflare)
+> - §5 n8n+Slack → #25
+> - §6 Plugin Kimai → #26
+> - §7 MCP + Slack → #27
+> - §8 Dashboards custom → #28 (scorecard), #29 (cohort comparison)
 
-> Convención: cada item lleva un **Owner** (quién lo hace) y un **Effort** (S/M/L).
-> S = <2h, M = 2-8h, L = >1 día. Pellizcá si pasa de L y dividilo.
+Pendientes priorizados. Snapshot del primer breakdown — complemento de `STATUS.md`
+(estado actual) y `CLAUDE.md` (visión + etapas originales).
+
+> Convención original: cada item llevaba **Owner** (quién lo hace) y **Effort**
+> (S/M/L). S = <2h, M = 2-8h, L = >1 día. En Issues esto se reemplazó por labels
+> `afk`/`hitl` (tipo de trabajo) + asignación explícita (owner).
 
 ---
 

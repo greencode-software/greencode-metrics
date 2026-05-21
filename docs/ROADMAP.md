@@ -25,7 +25,7 @@ con una línea en commits clave, y lo sacás de acá.
 | # | Item | Effort | Notas |
 |---|---|---|---|
 | 1.1 | **Sentry → webhook**: configurar Alert Rule en cada proyecto Sentry para POST-ear a `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/<sentry-conn-id>/issues` | M | DevLake no tiene plugin Sentry pull; sólo recibe push por webhook. Requiere 0.3 hecho. |
-| 1.2 | **SonarCloud connection**: connection plugin `sonarqube` (sirve para SonarCloud también) | M | Configurar token de SonarCloud, mapear a project. Habilita métricas de calidad. |
+| 1.2 | **SonarCloud connection**: connection plugin `sonarqube` (sirve para SonarCloud también) | M | Automatizado en `scripts/onboard-sonarcloud-project.sh`. Falta: generar token en 1Password (item `SonarCloud — service token`), agregarlo al `prod.env.sops` como `SONAR_TOKEN_GREENCODE`, y correr el script contra cada project. Ver `CONVENTIONS.md §3b`. |
 | 1.3 | **Bitbucket Cloud connection**: para proyectos que viven en bitbucket.org/greencode-software | M | Plugin `bitbucket` ya está habilitado en DevLake. Crear app password Bitbucket. Adaptar script onboard. |
 | 1.4 | **GitLab connection** (si aplica algún proyecto) | M | Plugin `gitlab` disponible. |
 | 1.5 | **TestRail / TestLink / Tracker de QA** (yBug, etc.) | L | Requiere plugin custom PyDevLake. Ver `plugins/kimai/` como modelo. |

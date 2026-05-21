@@ -54,6 +54,48 @@ Resolver el issue en Sentry cierra el incident en DevLake automáticamente (MTTR
 
 ---
 
+## 3b. Convención de calidad de código (SonarCloud)
+
+Cada proyecto Greencode se analiza con SonarCloud. El onboarding al stack de
+métricas es idempotente y vive en `scripts/onboard-sonarcloud-project.sh`:
+
+```bash
+SONARCLOUD_ORG=greencode-software \
+  scripts/onboard-sonarcloud-project.sh \
+    --token-env SONAR_TOKEN_GREENCODE \
+    <devlake-project> <sonar-project-key>
+```
+
+Reglas:
+
+- **Naming**: la connection se llama `<devlake-project>-sonarcloud`, en paralelo a
+  la convención `<devlake-project>-github`.
+- **Org**: `SONARCLOUD_ORG` es obligatoria y queda persistida en la connection
+  (campo `org`). Default operativo: `greencode-software`. Si en el futuro
+  aparece otra org (cliente con cuenta SonarCloud propia, separación legal,
+  etc.), se onboardea pasando `SONARCLOUD_ORG=<otra-org>` y el script crea una
+  connection nueva sin tocar la existente. Cada connection apunta a UNA sola
+  org — no se mezclan proyectos de orgs distintas en el mismo `connectionId`.
+- **Endpoint**: `https://sonarcloud.io/api` para SonarCloud (default). Para una
+  instancia SonarQube self-hosted se sobreescribe con `SONARCLOUD_ENDPOINT` y
+  se omite `SONARCLOUD_ORG` (SonarQube on-prem no usa el concepto de org —
+  pero el script igual exige la env var; en ese caso pasar el string vacío
+  no funciona, así que self-hosted requiere un wrapper o edición puntual).
+- **Token**: User Token de SonarCloud generado por una cuenta con visibilidad
+  sobre la org. Guardado en 1Password (item `SonarCloud — service token`).
+  Nunca pasa por argv; el script lo lee por env var o archivo y lo manda
+  directo a la API. DevLake lo encripta en MySQL con `ENCRYPTION_SECRET`.
+- **Scope**: el `projectKey` de SonarCloud (no el name humano). Es lo que aparece
+  en la URL `sonarcloud.io/project/overview?id=<key>`.
+- **Project DevLake**: debe existir antes (lo crea `onboard-github-project.sh`).
+  Si no existe, el script lo crea con DORA habilitado y warning.
+- **Re-corridas**: idempotente. Re-PATCHea token + endpoint + org, upsertea el
+  scope y mergea la connection en el blueprint preservando github/bitbucket/etc.
+  Si cambiás la `org` de una connection existente, el script avisa por stderr
+  porque la próxima ingesta puede traer datos nuevos.
+
+---
+
 ## 4. Tracking de adopción de IA por proyecto
 
 **No usamos labels de PR.** Los labels manuales se degradan rápido en la práctica
@@ -117,7 +159,7 @@ Ejemplos: `idb-belize-dw`, `closeup-medical-directory`, `pinvest-platform`,
 - [ ] Project creado en DevLake con naming canónico (`scripts/onboard-github-project.sh`)
 - [ ] Repo(s) conectados (BitBucket o GitHub) — la onboarding script lo cubre
 - [ ] Proyecto Sentry conectado vía Alert Rule → webhook
-- [ ] Proyecto SonarCloud conectado
+- [ ] Proyecto SonarCloud conectado (`scripts/onboard-sonarcloud-project.sh`)
 - [ ] Workflow de deploy llama a `greencode-software/greencode-metrics/actions/dora-deploy@v1`
 - [ ] Entrada en `docs/baselines.yml` con `ai_adoption_start` (o `null` si aún no aplica)
 - [ ] Baseline screenshot guardado en Drive (carpeta del proyecto / 06-Metrics)

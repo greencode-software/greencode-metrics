@@ -135,6 +135,11 @@ o `git push`) necesita el scope **`workflow`** en el token. El PAT del keyring l
 tuvo que sumar (`gh auth refresh -h github.com -s workflow`, con `GITHUB_TOKEN`/`GH_TOKEN`
 desactivados en el env o el refresh se niega).
 
+**Skill de onboarding**: el patrón quedó empaquetado como skill **`setup-dora`** en
+el plugin GreenQA (`greencode-software/Greencode-quality` PR #24, bump 0.3.7).
+Cualquiera del equipo instrumenta sus repos con Claude Code sin re-descubrir los
+gotchas. Solo deploys por ahora; Sentry (CFR/MTTR) pendiente de validar el mapping.
+
 ---
 
 ## Drift detectado 2026-07-01

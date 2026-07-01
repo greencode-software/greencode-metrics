@@ -118,13 +118,15 @@ enganchar el deploy real (Heroku release hook / deployment_status).
 | Repo | Project DevLake | Trigger | PR | Secret |
 |---|---|---|---|---|
 | `elamonica/tallone` (personal) | `tallone-sistema-de-gestion` | push a `master` | [#34](https://github.com/elamonica/tallone/pull/34) | **repo secret** ✅ seteado |
-| `greencode-software/pinvest` (org) | `pinvest-platform` | push a `main` | [#126](https://github.com/greencode-software/pinvest/pull/126) | org secret recomendado ⏳ |
+| `greencode-software/pinvest` (org) | `pinvest-platform` | push a `main` | [#126](https://github.com/greencode-software/pinvest/pull/126) | **repo secret** ⏳ |
 
 **Gotcha del secret**: `DEVLAKE_DEPLOY_WEBHOOK` apunta a la connection webhook
 **deployments (id=1)**, compartida por todos los repos (el `project` distingue en
-el payload). tallone es cuenta **personal** → un org secret NO llega, va como
-**repo secret**. pinvest está en la **org** → conviene **org secret** (`--visibility all`)
-para cubrir futuros repos sin repetir.
+el payload). Va **siempre como repo secret** (por repo): en el **plan Free** de
+GitHub los org secrets **no alcanzan a repos privados** (requieren Team/Enterprise)
+y casi todos los repos de Greencode son privados; los repos personales tampoco
+reciben org secrets. Un org secret único solo tendría sentido si el org pasa a
+Team/Enterprise.
 
 **Pendiente para cerrar**: (1) confirmar org secret de pinvest; (2) mergear #34 y
 #126; (3) hacer un push a la rama default de cada uno y verificar que aparezca una

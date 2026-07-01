@@ -26,7 +26,12 @@
   DORA aún vacío por diseño: falta `dora-deploy` (deploys) y webhook Sentry
   (incidentes). GitHub/PRs sí visibles en Engineering Overview + GitHub dashboards.
 
-- **Pendiente inmediato**: (a) re-onboardear `tallone-sistema-de-gestion` contra prod;
+- **Segundo proyecto: `tallone-sistema-de-gestion`** ✅ (onboardeado 2026-07-01,
+  GitHub `elamonica/tallone`, history desde 2026-03-01). Elegido como piloto de la
+  action `dora-deploy`.
+
+- **Pendiente inmediato**: (a) org secret `DEVLAKE_DEPLOY_WEBHOOK` en la org GitHub
+  + agregar el step `dora-deploy@v1` al workflow de deploy de tallone (piloto DORA);
   (b) corregir el drift del stack prod (ver §"Drift detectado 2026-07-01").
   Ver `docs/ROADMAP.md` §"Bloqueante inmediato".
 
@@ -67,7 +72,9 @@ Grafana y DevLake comparten el namespace `/api/` (ambos exponen `/api/user`, `/a
 2026-07-01. Connection id=1, Blueprint id=1 (cron diario, history desde 2026-05-01
 = creación del repo). Es el primer proyecto ingestado en prod.
 
-`tallone-sistema-de-gestion` sigue pendiente de re-onboardear (ver ROADMAP).
+**`tallone-sistema-de-gestion`** (GitHub `elamonica/tallone`, Ruby) — onboardeado
+2026-07-01. Connection id=2, Blueprint id=2 (history desde 2026-03-01 = creación del
+repo). Piloto de la action `dora-deploy`.
 
 **Acceso a la API para onboardear**: como el stack prod NO expone la API a internet
 (el firewall de DO bloquea 8088), el onboarding se corre por túnel SSH:
@@ -86,7 +93,8 @@ Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO ba
   (GitHub org `greencode-software`), consumida por `actions/dora-deploy`.
 - La URL de **sentry-incidents** va como target del webhook en las Alert Rules de Sentry.
 - Path público verificado abierto (GET → 404, no 401). Sólo aceptan POST.
-- Pendiente: crear el org secret + taggear `v1` + onboardear tallone para pilotear DORA.
+- Tag `v1` de greencode-metrics creado (apunta a master `a353558`) → `dora-deploy@v1`
+  resuelve. Falta: org secret `DEVLAKE_DEPLOY_WEBHOOK` + step en el workflow de tallone.
 
 ---
 

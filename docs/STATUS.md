@@ -1,7 +1,7 @@
 # STATUS — Greencode Metrics
 
 > Documento vivo. Se sobrescribe entero cada sesión. La historia queda en `git log`.
-> Última actualización: **2026-05-19**.
+> Última actualización: **2026-07-01**.
 >
 > Orden de lectura sugerido para retomar contexto frío:
 > `CLAUDE.md` → `docs/CONVENTIONS.md` → este archivo (STATUS) → `docs/ROADMAP.md`.
@@ -21,7 +21,14 @@
   - TLS:             Let's Encrypt automático (Caddy) en ambos subdominios
   - Backups:         cron weekly → DO Spaces `greencode-devlake-backups`
 
-- **Pendiente inmediato**: validar end-to-end + re-onboardear `tallone-sistema-de-gestion` contra prod. Ver `docs/ROADMAP.md` §"Bloqueante inmediato".
+- **Primer proyecto real en prod: `pinvest-platform`** ✅ (onboardeado 2026-07-01,
+  GitHub `greencode-software/pinvest`). Es el primer dato ingestado en prod.
+  DORA aún vacío por diseño: falta `dora-deploy` (deploys) y webhook Sentry
+  (incidentes). GitHub/PRs sí visibles en Engineering Overview + GitHub dashboards.
+
+- **Pendiente inmediato**: (a) re-onboardear `tallone-sistema-de-gestion` contra prod;
+  (b) corregir el drift del stack prod (ver §"Drift detectado 2026-07-01").
+  Ver `docs/ROADMAP.md` §"Bloqueante inmediato".
 
 - **Etapas del roadmap original** (`CLAUDE.md`):
   - 1 (local) ✅ · 2 (piloto tallone) ✅ · 6 (deploy prod) ✅
@@ -56,7 +63,52 @@ Grafana y DevLake comparten el namespace `/api/` (ambos exponen `/api/user`, `/a
 
 ### Datos en prod hoy
 
-**Vacío.** El droplet se levantó pero NO se ingestó nada todavía. La re-onboarding de `tallone-sistema-de-gestion` está pendiente (ver ROADMAP).
+**`pinvest-platform`** (GitHub `greencode-software/pinvest`, Ruby) — onboardeado
+2026-07-01. Connection id=1, Blueprint id=1 (cron diario, history desde 2026-05-01
+= creación del repo). Es el primer proyecto ingestado en prod.
+
+`tallone-sistema-de-gestion` sigue pendiente de re-onboardear (ver ROADMAP).
+
+**Acceso a la API para onboardear**: como el stack prod NO expone la API a internet
+(el firewall de DO bloquea 8088), el onboarding se corre por túnel SSH:
+`ssh -N -L 18088:127.0.0.1:8088 root@134.199.247.25` y luego
+`env -u GITHUB_TOKEN DEVLAKE_API=http://localhost:18088 ./scripts/onboard-github-project.sh ...`.
+Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO bajo `/api`.
+
+### Webhook connections (DORA) — creadas 2026-07-01
+
+| Connection | id | URL pública (POST, sin auth) |
+|---|---|---|
+| deployments | **1** | `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/1/deployments` |
+| sentry-incidents | **2** | `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/2/issues` |
+
+- La URL de **deployments** es lo que va como org secret `DEVLAKE_DEPLOY_WEBHOOK`
+  (GitHub org `greencode-software`), consumida por `actions/dora-deploy`.
+- La URL de **sentry-incidents** va como target del webhook en las Alert Rules de Sentry.
+- Path público verificado abierto (GET → 404, no 401). Sólo aceptan POST.
+- Pendiente: crear el org secret + taggear `v1` + onboardear tallone para pilotear DORA.
+
+---
+
+## Drift detectado 2026-07-01
+
+Al onboardear pinvest se encontró que el stack prod NO está corriendo con el
+overlay de Caddy que cierra puertos (`docker-compose.caddy.yml`). Estado real
+observado en el droplet (`docker ps`):
+
+1. **`greencode-devlake` publicado en `0.0.0.0:8088`** y **`grafana` en `0.0.0.0:3001`**
+   — el overlay debía ponerles `ports: []`. Mitigado por el **DO Cloud Firewall**,
+   que bloquea 8088/3001 desde internet (verificado: sólo 22/80/443 entran). Es una
+   brecha de defense-in-depth, no una exposición activa.
+2. **`config-ui` NO escucha en `127.0.0.1:4000`** (contenedor Up pero sin port
+   binding). El acceso admin vía SSH tunnel a 4000 documentado más abajo **no
+   funciona** hoy. Para llegar a la API se usa el túnel a 8088 (ver §"Datos en prod").
+
+**Causa probable**: el stack se levantó con el compose base sin el `-f` del overlay,
+o los `ports: []` no se aplicaron. **Fix pendiente**: re-desplegar con
+`docker compose -f docker/docker-compose.yml -f docker/caddy/docker-compose.caddy.yml up -d`
+y verificar que 8088/3001 dejen de bindear y que config-ui quede en 127.0.0.1:4000.
+Nuevo item para el tracker.
 
 ---
 

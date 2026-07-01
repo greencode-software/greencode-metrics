@@ -12,3 +12,9 @@
 - project: tallone-sistema-de-gestion
   ai_adoption_start: null   # TODO: confirmar fecha con elamonica
   notes: "Pendiente de definir. Probablemente Q1 2026 cuando se sumo Claude Code."
+
+- project: pinvest-platform
+  ai_adoption_start: 2026-05-08   # = creacion del repo; IA usada desde el origen
+  notes: "Repo greencode-software/pinvest (Ruby) creado 2026-05-08 y desarrollado
+    con IA desde el dia cero (confirmado por elamonica). Toda la historia del
+    proyecto es cohorte post-IA; no hay ventana pre-IA para comparar."

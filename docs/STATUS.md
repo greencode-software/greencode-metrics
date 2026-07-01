@@ -30,10 +30,14 @@
   GitHub `elamonica/tallone`, history desde 2026-03-01). Elegido como piloto de la
   action `dora-deploy`.
 
-- **Pendiente inmediato**: (a) org secret `DEVLAKE_DEPLOY_WEBHOOK` en la org GitHub
-  + agregar el step `dora-deploy@v1` al workflow de deploy de tallone (piloto DORA);
-  (b) corregir el drift del stack prod (ver §"Drift detectado 2026-07-01").
-  Ver `docs/ROADMAP.md` §"Bloqueante inmediato".
+- **Piloto DORA en marcha** 🟡 — se instrumentaron los dos repos con la action
+  `dora-deploy@v1` (ver §"Piloto DORA — estado 2026-07-01"). Pendiente: mergear
+  los 2 PRs + confirmar el secret de pinvest + ver la primera entrada de Deploy
+  Frequency en Grafana.
+
+- **Pendiente inmediato**: (a) cerrar el piloto DORA (mergear PRs, secret pinvest,
+  primer deploy verificado); (b) corregir el drift del stack prod (ver §"Drift
+  detectado 2026-07-01"). Ver `docs/ROADMAP.md` §"Bloqueante inmediato".
 
 - **Etapas del roadmap original** (`CLAUDE.md`):
   - 1 (local) ✅ · 2 (piloto tallone) ✅ · 6 (deploy prod) ✅
@@ -94,7 +98,42 @@ Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO ba
 - La URL de **sentry-incidents** va como target del webhook en las Alert Rules de Sentry.
 - Path público verificado abierto (GET → 404, no 401). Sólo aceptan POST.
 - Tag `v1` de greencode-metrics creado (apunta a master `a353558`) → `dora-deploy@v1`
-  resuelve. Falta: org secret `DEVLAKE_DEPLOY_WEBHOOK` + step en el workflow de tallone.
+  resuelve.
+
+---
+
+## Piloto DORA — estado 2026-07-01
+
+Se instrumentaron **tallone** y **pinvest** con la action reutilizable
+`dora-deploy@v1`. **Hallazgo clave**: ninguno de los dos deploya por GitHub
+Actions (tallone deploya por Heroku sin workflows; pinvest tiene `backend.yml` +
+`frontend.yml` pero son solo CI). Por eso el enfoque no es "step después del
+deploy" sino un **workflow proxy `on: push` a la rama default**.
+
+**Limitaciones aceptadas del proxy** (documentadas en el header de cada workflow):
+reporta `SUCCESS` aunque el deploy real falle, y el timing es aproximado (no espera
+al deploy). Suficiente para Deploy Frequency; para Lead Time exacto habría que
+enganchar el deploy real (Heroku release hook / deployment_status).
+
+| Repo | Project DevLake | Trigger | PR | Secret |
+|---|---|---|---|---|
+| `elamonica/tallone` (personal) | `tallone-sistema-de-gestion` | push a `master` | [#34](https://github.com/elamonica/tallone/pull/34) | **repo secret** ✅ seteado |
+| `greencode-software/pinvest` (org) | `pinvest-platform` | push a `main` | [#126](https://github.com/greencode-software/pinvest/pull/126) | org secret recomendado ⏳ |
+
+**Gotcha del secret**: `DEVLAKE_DEPLOY_WEBHOOK` apunta a la connection webhook
+**deployments (id=1)**, compartida por todos los repos (el `project` distingue en
+el payload). tallone es cuenta **personal** → un org secret NO llega, va como
+**repo secret**. pinvest está en la **org** → conviene **org secret** (`--visibility all`)
+para cubrir futuros repos sin repetir.
+
+**Pendiente para cerrar**: (1) confirmar org secret de pinvest; (2) mergear #34 y
+#126; (3) hacer un push a la rama default de cada uno y verificar que aparezca una
+entrada de Deploy Frequency en el dashboard DORA de Grafana.
+
+**Requisito de tooling**: crear/editar archivos bajo `.github/workflows/` (por API
+o `git push`) necesita el scope **`workflow`** en el token. El PAT del keyring lo
+tuvo que sumar (`gh auth refresh -h github.com -s workflow`, con `GITHUB_TOKEN`/`GH_TOKEN`
+desactivados en el env o el refresh se niega).
 
 ---
 

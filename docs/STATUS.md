@@ -142,6 +142,10 @@ el plugin GreenQA (`greencode-software/Greencode-quality` PR #24, bump 0.3.7).
 Cualquiera del equipo instrumenta sus repos con Claude Code sin re-descubrir los
 gotchas. Solo deploys por ahora; Sentry (CFR/MTTR) pendiente de validar el mapping.
 
+**Cómo sumar un repo nuevo al tracking DORA**: paso a paso completo (onboard pull →
+setup-dora push → secret → verificar) en `docs/runbooks/dora-onboarding.md`.
+Clave: **onboard PRIMERO** (crea el `project` + trae historia), setup-dora DESPUÉS.
+
 ---
 
 ## Drift detectado 2026-07-01

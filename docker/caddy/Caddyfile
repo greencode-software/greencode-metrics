@@ -89,10 +89,15 @@ api.{$DOMAIN} {
     }
 
     # ---------- 2) resto de la API DevLake: basic auth ----------
+    # Mismo motivo que el bloque webhook: el backend sirve en ROOT, no bajo /api
+    # (GET http://devlake:8080/projects -> 200 ; GET .../api/projects -> 404).
+    # Sin el strip, /api/projects llegaba como /api/projects -> 404, lo que dejaba
+    # inalcanzable la API admin desde internet (onboard self-service via /onboard-dora).
     handle /api/* {
         basic_auth {
             {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
         }
+        uri strip_prefix /api
         reverse_proxy devlake:8080
     }
 

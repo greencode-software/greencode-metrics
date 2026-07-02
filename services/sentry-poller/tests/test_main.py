@@ -21,10 +21,12 @@ def test_main_requires_token(monkeypatch):
     monkeypatch.delenv("SENTRY_AUTH_TOKEN", raising=False)
     assert main(["--once", "--config", "/nonexistent"]) == 2
 
-def test_main_invalid_config_returns_2(monkeypatch):
+def test_main_invalid_config_returns_2(monkeypatch, tmp_path):
     from sentry_poller.__main__ import main
     monkeypatch.setenv("SENTRY_AUTH_TOKEN", "tok")
-    assert main(["--once", "--config", "/nonexistent/nope.yml"]) == 2
+    bad = tmp_path / "bad.yml"
+    bad.write_text("sentry_org: [unclosed\n")  # malformed YAML -> load_config raises ValueError
+    assert main(["--once", "--config", str(bad)]) == 2
 
 def test_main_loop_runs_once_then_sleeps(monkeypatch):
     from sentry_poller import __main__ as m

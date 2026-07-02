@@ -139,6 +139,60 @@ workflow simple (1 trigger + switch por `action` + 2 HTTP requests).
 3. Decidir n8n vs micro-servicio y crear el issue de implementación.
 4. Corregir el drift de `docs/CONVENTIONS.md §3` y crear `docs/sentry-webhook-payload.md`.
 
+## Hallazgo de infra (2026-07-02) — el webhook NO es posteable hoy
+
+Al intentar el PoC de escritura se descubrió que **ningún** path de webhook acepta
+un POST sin credenciales. Probado contra `api.devlake.greencodesoftware.com`:
+
+| Path | Resultado |
+|---|---|
+| `/api/plugins/webhook/connections/2/issues` (el documentado en STATUS/secret) | **404** |
+| `/api/rest/plugins/webhook/connections/2/issues` | **401** Caddy Basic |
+| `/api/plugins/webhook/connections/1/deployments` (deploys) | **404** |
+| `/api/rest/plugins/webhook/connections/1/deployments` | **401** Caddy Basic |
+
+El 401 trae `server: Caddy` + `www-authenticate: Basic realm="restricted"` → es el
+basic-auth de Caddy, no un apiKey de DevLake.
+
+**Causa raíz — bug en `docker/caddy/Caddyfile`:**
+```caddy
+handle_path /api/plugins/webhook/* {     # strip prefix → {uri}=/connections/2/issues
+    reverse_proxy devlake:8080 {...}
+    rewrite * /api/plugins/webhook{uri}   # ← reintroduce /api ; backend sirve en ROOT
+}
+```
+El backend DevLake sirve la API en **root** (`/plugins/...`, ver STATUS), así que el
+`/api` del rewrite produce un path que el backend no tiene → 404. Todo lo que cae en
+`/api/rest/*` matchea el otro bloque (`handle /api/*`) con basic-auth → 401.
+
+**Impacto colateral (fuera del scope Sentry pero crítico):** la action `dora-deploy`
+postea **sin auth** a la URL rota → **nunca registró un deploy**. Como sólo emite
+`::warning::` sin abortar, pasó inadvertido. Es la causa raíz del AC abierto del
+issue #10 (Deploy Frequency vacío en Grafana).
+
+**Fix elegido: A — bypass en Caddy.** Corregir el bloque de webhook para (1) NO pedir
+basic-auth y (2) reescribir al path REAL del backend. Antes de deployar hay que
+**confirmar en la VM** qué path sirve `devlake:8080`, con:
+```bash
+# en la VM (134.199.247.25), desde el compose del stack:
+for p in /plugins/webhook/connections/2/issues \
+         /api/plugins/webhook/connections/2/issues \
+         /api/rest/plugins/webhook/connections/2/issues; do
+  code=$(docker compose exec -T devlake sh -c \
+    "wget -qO- --server-response --post-data='{}' \
+     --header='Content-Type: application/json' http://localhost:8080$p 2>&1 | \
+     awk '/HTTP\//{print \$2; exit}'")
+  echo "$p -> $code"   # el que NO sea 404 es el path real del backend
+done
+```
+El path que devuelva 400/401/200 (no 404) es el que debe ir en el `rewrite` del
+Caddyfile. Con eso se corrige el bloque, se redeploya Caddy y se ajusta la URL del
+secret `DEVLAKE_DEPLOY_WEBHOOK` (y el target del webhook de Sentry) a
+`https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/<id>/...`
+(el path público no cambia; lo que cambia es a dónde lo mapea Caddy internamente).
+
+Recién con el webhook posteable se puede retomar el **PoC de escritura** de este spike.
+
 ## Fuentes
 - DevLake incoming webhook: https://devlake.apache.org/docs/Plugins/webhook
 - Sentry integration platform webhooks: https://docs.sentry.io/organization/integrations/integration-platform/webhooks/

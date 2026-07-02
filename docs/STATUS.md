@@ -63,7 +63,7 @@ greencode-devlake-caddy       caddy:2.8-alpine                0.0.0.0:80, 443, 4
 |---|---|---|
 | Grafana | https://devlake.greencodesoftware.com | Google OAuth (`@greencodesoftware.com`) |
 | DevLake API admin | https://api.devlake.greencodesoftware.com/api/... | Basic auth (user `greencode`) |
-| DevLake webhook público | https://api.devlake.greencodesoftware.com/api/plugins/webhook/... | Sin auth (URL secreta) |
+| DevLake webhook público | ⚠️ **ROTO** (ver §"Webhook connections") — hoy da 404/401, ningún path acepta POST sin basic-auth | — |
 | Config UI | `ssh -L 4000:127.0.0.1:4000 root@134.199.247.25` → http://localhost:4000 | SSH tunnel |
 
 ### Subdominios — por qué hay dos
@@ -96,9 +96,33 @@ Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO ba
 - La URL de **deployments** es lo que va como org secret `DEVLAKE_DEPLOY_WEBHOOK`
   (GitHub org `greencode-software`), consumida por `actions/dora-deploy`.
 - La URL de **sentry-incidents** va como target del webhook en las Alert Rules de Sentry.
-- Path público verificado abierto (GET → 404, no 401). Sólo aceptan POST.
 - Tag `v1` de greencode-metrics creado (apunta a master `a353558`) → `dora-deploy@v1`
   resuelve.
+
+> 🔴 **CORRECCIÓN 2026-07-02 — el webhook NO es posteable hoy.** La afirmación previa
+> ("path público verificado abierto, GET→404 = existe, sin auth") era **incorrecta**.
+> Probado contra prod (`api.devlake.greencodesoftware.com`):
+>
+> | Path | Resultado |
+> |---|---|
+> | `/api/plugins/webhook/...` (el del secret y las tablas de arriba) | **404** — la base `/api/` no rutea al backend |
+> | `/api/rest/plugins/webhook/connections/1/deployments` | **401** Caddy Basic (`www-authenticate: Basic realm="restricted"`) |
+> | `/api/rest/plugins/webhook/connections/2/issues` | **401** Caddy Basic |
+>
+> **Causa raíz**: el bloque `handle_path /api/plugins/webhook/*` del `docker/caddy/Caddyfile`
+> reescribe a `/api/plugins/webhook{uri}` y proxyea a `devlake:8080`, pero el backend
+> sirve la API en **root** (`/plugins/...`, ver arriba) → el `/api` sobrante hace 404.
+> Y `/api/rest/*` cae en el `handle /api/*` con basic-auth de Caddy → 401.
+>
+> **Impacto**: `dora-deploy` (que postea sin auth a la URL rota) **nunca registró un
+> solo deploy** — y como la action sólo emite `::warning::` sin fallar, pasó
+> inadvertido. Por eso Deploy Frequency jamás iba a aparecer en Grafana (issue #10).
+> El webhook de Sentry (fase 2) tiene el mismo bloqueo.
+>
+> **Fix elegido**: A — bypass en Caddy (eximir del basic-auth sólo los paths de
+> webhook y corregir el rewrite al path real del backend). Requiere confirmar en la
+> VM el path exacto que sirve `devlake:8080`. Detalle en
+> `docs/spikes/2026-07-02-sentry-devlake-webhook-mapping.md §"Hallazgo de infra"`.
 
 ---
 

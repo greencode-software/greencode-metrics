@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "sentry-poller"
+version = "0.1.0"
+description = "Poll Sentry incidents into DevLake for DORA CFR/MTTR"
+authors = ["Greencode Software"]
+packages = [{ include = "sentry_poller" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+requests = "^2.32"
+pyyaml = "^6.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

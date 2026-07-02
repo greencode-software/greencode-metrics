@@ -127,8 +127,33 @@ Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO ba
 > para que re-resuelva el mount. Un `reload` solo no alcanza tras un `git pull`.
 >
 > **Pendiente**: quedó un incident de prueba `SPIKE-TEST-20260702-01` (cerrado) en la
-> connection 2. Borrarlo del MySQL si se quiere limpieza fina (no afecta CFR porque
-> aún no hay deployments registrados). Retomar el relay de Sentry (spike §diseño).
+> connection 2. Borrarlo del MySQL si se quiere limpieza fina. Retomar el relay de
+> Sentry (spike §diseño).
+
+> 🟠 **GAP 2 (descubierto 2026-07-02 al verificar) — el webhook no está asociado a
+> ningún project.** Se posteó un deployment de prueba (`verify-20260702-tallone-01`,
+> commit real de tallone) → **200 y quedó guardado** en `cicd_deployment_commits`
+> con `cicd_scope_id = webhook:1`. PERO:
+>
+> - `project_mapping` de `tallone-sistema-de-gestion` sólo mapea su repo GitHub
+>   (`github:GithubRepo:2:...`), NO el scope `webhook:1`.
+> - La Deploy Frequency de Grafana cuenta deployments cuyo `cicd_scope` está en el
+>   `project_mapping` del project → **el deployment del webhook no cuenta para nadie**.
+>
+> **Corrección al diseño**: el supuesto "una webhook `deployments` compartida (id=1)
+> para todos los repos, el project se distingue en el payload" es **incorrecto**.
+> DevLake atribuye por `project_mapping` (scope→project), NO por `repoUrl` del
+> payload. Si se agrega `webhook:1` a varios projects, cada deploy cuenta para
+> **todos** (doble conteo). Lo correcto es **una webhook connection por project**
+> (ej. `tallone-deployments`, `pinvest-deployments`), cada una agregada a SU project,
+> y el secret `DEVLAKE_DEPLOY_WEBHOOK` de cada repo apunta a la suya.
+>
+> **Pendiente para cerrar el AC de #10**: (1) decidir shared-vs-per-project; (2) crear
+> la(s) webhook connection(s) y **agregarla(s) al project** en DevLake (Config UI →
+> Project → Webhooks, o admin API con basic-auth); (3) ajustar el/los secret(s) de
+> los repos; (4) verificar Deploy Frequency en Grafana. Requiere acceso admin
+> (SSH tunnel a config-ui:4000, o basic-auth de la API) que no está en el env de esta
+> sesión.
 
 ---
 

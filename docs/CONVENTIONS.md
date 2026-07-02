@@ -43,14 +43,22 @@ workspace en BitBucket — no se rota por proyecto.
 
 ## 3. Convención de incidents (Sentry)
 
-En cada proyecto Sentry, crear una **Alert Rule** "Production Incident":
+> ⚠️ **En revisión (2026-07-02)**: Sentry **no puede postear directo** a DevLake —
+> su payload no es templatable y no manda el evento de resolución (necesario para
+> MTTR). Hace falta un **relay** (Integration Platform "issue" webhook → transformador
+> → DevLake). Ver el spike `docs/spikes/2026-07-02-sentry-devlake-webhook-mapping.md`.
+> La convención de abajo se actualizará cuando se implemente el relay.
 
-- Condición: `event.level >= error` AND `environment = production`
-- Acción: Send a notification via Webhook
-- URL: `https://api.devlake.greencodesoftware.com/api/plugins/webhook/1/issues`
-- Payload: usar el template documentado en `/docs/sentry-webhook-payload.md`
+Objetivo: cada incident de producción en Sentry se registra como `type=INCIDENT`
+en DevLake (para CFR/MTTR), vía el relay.
 
-Resolver el issue en Sentry cierra el incident en DevLake automáticamente (MTTR).
+- Filtro de producción: `event.level >= error` AND `environment = production`
+- Endpoint DevLake (connection `sentry-incidents`, id **2**):
+  - Alta: `POST https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/2/issues`
+  - Cierre: `POST .../api/plugins/webhook/connections/2/issue/<issueKey>/close`
+- Mapeo de campos: ver el spike (usar el Sentry group id como `issueKey`).
+
+Resolver el issue en Sentry cierra el incident en DevLake (setea `resolutionDate` → MTTR).
 
 ---
 

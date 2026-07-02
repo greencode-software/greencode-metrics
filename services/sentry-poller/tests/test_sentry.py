@@ -32,6 +32,12 @@ def test_list_incident_issues_follows_pagination():
     issues = c.list_incident_issues("tallone-prod")
     assert [i["id"] for i in issues] == ["1", "2"]
 
+    # Verify cross-page filter preservation
+    first_call, second_call = session.get.call_args_list
+    assert first_call.kwargs["params"]["query"] == "level:[error,fatal]"
+    assert first_call.kwargs["params"]["environment"] == "production"
+    assert second_call.args[0] == "https://sentry.io/next"
+
 def test_resolution_date_picks_set_resolved():
     session = MagicMock()
     session.get.return_value = _resp({"activity": [
@@ -46,3 +52,12 @@ def test_resolution_date_none_when_absent():
     session.get.return_value = _resp({"activity": [{"type": "note", "dateCreated": "x"}]})
     c = SentryClient("tok", "greencode", session=session)
     assert c.resolution_date("1") is None
+
+def test_resolution_date_picks_most_recent_when_multiple():
+    session = MagicMock()
+    session.get.return_value = _resp({"activity": [
+        {"type": "set_resolved", "dateCreated": "2026-07-05T09:00:00Z"},
+        {"type": "set_resolved_in_release", "dateCreated": "2026-07-01T10:00:00Z"},
+    ]})
+    c = SentryClient("tok", "greencode", session=session)
+    assert c.resolution_date("1") == "2026-07-05T09:00:00Z"

@@ -72,12 +72,20 @@ api.{$DOMAIN} {
     # Sentry alerta y dora-deploy action postean aca. La proteccion real es:
     # 1) la URL incluye un connection-id secreto-por-oscuridad,
     # 2) HMAC signing en Sentry (configurable).
-    handle_path /api/plugins/webhook/* {
+    #
+    # IMPORTANTE (verificado 2026-07-02 contra el container greencode-devlake):
+    # el backend DevLake sirve la API en ROOT, no bajo /api. Es decir
+    # POST http://devlake:8080/plugins/webhook/connections/<id>/issues  -> 400/200
+    # POST http://devlake:8080/api/plugins/webhook/...                  -> 404
+    # Por eso hay que quitar el prefijo /api antes de proxyear. La version
+    # anterior (rewrite * /api/plugins/webhook{uri}) reintroducia /api -> 404,
+    # lo que dejaba el webhook publico roto (dora-deploy nunca registro deploys).
+    handle /api/plugins/webhook/* {
+        uri strip_prefix /api
         reverse_proxy devlake:8080 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
         }
-        rewrite * /api/plugins/webhook{uri}
     }
 
     # ---------- 2) resto de la API DevLake: basic auth ----------

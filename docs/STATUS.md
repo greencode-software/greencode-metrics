@@ -148,12 +148,34 @@ Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO ba
 > (ej. `tallone-deployments`, `pinvest-deployments`), cada una agregada a SU project,
 > y el secret `DEVLAKE_DEPLOY_WEBHOOK` de cada repo apunta a la suya.
 >
-> **Pendiente para cerrar el AC de #10**: (1) decidir shared-vs-per-project; (2) crear
-> la(s) webhook connection(s) y **agregarla(s) al project** en DevLake (Config UI →
-> Project → Webhooks, o admin API con basic-auth); (3) ajustar el/los secret(s) de
-> los repos; (4) verificar Deploy Frequency en Grafana. Requiere acceso admin
-> (SSH tunnel a config-ui:4000, o basic-auth de la API) que no está en el env de esta
-> sesión.
+> **Corrección al diseño**: se eligió **per-project** (evita el doble conteo).
+>
+> ✅ **GAP 2 RESUELTO para tallone (2026-07-02)** — vía backend API por SSH:
+> - Creada connection **`tallone-deployments` (id=3)** → deployments van a scope `webhook:3`.
+> - **Blueprint 2 actualizado**: se agregó `{"pluginName":"webhook","connectionId":3}`
+>   a `blueprint.connections`. DevLake regenera el plan con
+>   `{"rowId":"webhook:3","table":"cicd_scopes"}` en `projectMappings` → **mapping
+>   durable** (la corrida diaria lo mantiene). La forma correcta de asociar un webhook
+>   a un project es el campo **`connections`** del blueprint (NO editar el `plan`, que
+>   es autogenerado; ni `project_mapping` directo, que la corrida diaria pisa).
+> - Verificado con la **query real** del panel Deployment Frequency:
+>   `SELECT COUNT(DISTINCT cicd_deployment_id) ... JOIN project_mapping pm ON
+>   cicd_scope_id=pm.row_id AND pm.table='cicd_scopes' WHERE project_name='tallone...'`
+>   → **1 deploy** (SUCCESS/PRODUCTION). Grafana lo muestra.
+>
+> ⏳ **Falta para deploys reales de tallone**: actualizar el repo secret
+> `DEVLAKE_DEPLOY_WEBHOOK` de `elamonica/tallone` para que apunte a la connection 3:
+> `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/3/deployments`
+> (hoy apunta a la connection 1 compartida, que ya no está mapeada a tallone). Lo
+> corre el dueño con `gh secret set` (el classifier bloquea valores de secret).
+>
+> ⏳ **pinvest**: replicar (connection `pinvest-deployments` + blueprint + secret). Ideal:
+> **automatizar** la creación de la connection + `connections` del blueprint en
+> `scripts/onboard-github-project.sh`, así proyecto nuevo = onboard + setup-dora, sin
+> tocar DevLake a mano.
+>
+> **Data de prueba a limpiar**: deploys `verify-20260702-tallone-01` (scope webhook:1
+> huérfano y webhook:3) + incident `SPIKE-TEST-20260702-01` (webhook:2).
 
 ---
 

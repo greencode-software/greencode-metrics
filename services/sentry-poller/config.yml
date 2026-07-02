@@ -4,4 +4,4 @@ devlake_webhook_base: http://devlake:8080/plugins/webhook
 projects:
   - devlake_project: tallone-sistema-de-gestion
     sentry_project: tallone-prod
-    incidents_connection_id: 0   # reemplazar por el id real de tallone-incidents (Task 8/9)
+    incidents_connection_id: 4   # tallone-incidents (webhook conn 4), bindeada al blueprint 2

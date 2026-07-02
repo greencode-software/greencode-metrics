@@ -90,8 +90,10 @@ Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO ba
 
 | Connection | id | URL pública (POST, sin auth) |
 |---|---|---|
-| deployments | **1** | `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/1/deployments` |
-| sentry-incidents | **2** | `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/2/issues` |
+| deployments (compartida, legacy) | **1** | `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/1/deployments` |
+| sentry-incidents (genérica, legacy) | **2** | `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/2/issues` |
+| tallone-deployments | **3** | `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/3/deployments` |
+| tallone-incidents | **4** | `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/4/issues` |
 
 - La URL de **deployments** es lo que va como org secret `DEVLAKE_DEPLOY_WEBHOOK`
   (GitHub org `greencode-software`), consumida por `actions/dora-deploy`.
@@ -176,6 +178,43 @@ Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO ba
 >
 > **Data de prueba a limpiar**: deploys `verify-20260702-tallone-01` (scope webhook:1
 > huérfano y webhook:3) + incident `SPIKE-TEST-20260702-01` (webhook:2).
+
+---
+
+## Sentry poller (CFR/MTTR) — implementado 2026-07-02
+
+Servicio nuevo `services/sentry-poller/` (Python 3.12, Poetry). Poll stateless/idempotente:
+cada N min, por project del `config.yml`, lista issues de Sentry (`level:[error,fatal]`,
+`environment=production`, `statsPeriod=14d`), transforma a payload DevLake y postea a la
+webhook connection `<project>-incidents`. Dentro del compose pega a `devlake:8080` directo.
+
+- **Implementado por SDD** (9 tasks, TDD): config loader, transform puro, cliente Sentry,
+  cliente DevLake (retry 5xx/red), sync orquestación (per-issue error-isolated), CLI
+  (`--once`/`--dry-run`/loop), Dockerfile + servicio compose, y extensión de
+  `scripts/onboard-github-project.sh` (crea+bindea `<project>-incidents`). **34 tests verdes.**
+- **Bug encontrado en el dry-run contra Sentry real** (crítico, sólo visible en vivo): el
+  endpoint de resolución era `/issues/{id}/activity/` (singular) → **404** en Sentry SaaS,
+  tirando TODOS los incidents resueltos (los que alimentan MTTR). Correcto: **`/activities/`**
+  (plural); el body sigue trayendo la lista bajo la key `activity`. Post-fix el dry-run de
+  `tallone-prod` dio `{fetched:43, qualified:39, posted:39, errors:0}`.
+
+### Verificación end-to-end CFR/MTTR (2026-07-02, contra prod)
+- Creada connection **`tallone-incidents` (id=4)** por SSH → incidents van a scope `webhook:4`.
+- **Blueprint 2** bindeado: `{"pluginName":"webhook","connectionId":4,"scopes":[{"scopeId":"4"}]}`
+  agregado a `blueprint.connections` (mismo patrón durable que deployments). Tras correr el
+  blueprint (pipeline 6, TASK_COMPLETED) → `project_mapping` obtiene `webhook:4 →
+  tallone-sistema-de-gestion` (durable).
+- Posteado un incident sintético (`POLLER-TEST-1`, resolved, created 10:00 → resolved 11:00).
+  Llegó a `issues` + `incidents` (`lead_time_minutes=60`). Query real de MTTR
+  (`incidents JOIN board_issues JOIN project_mapping WHERE project_name='tallone...'`) →
+  **MTTR = 60 min** atribuido a tallone. **Limpiado** `POLLER-TEST-1` de `issues`/`incidents`/
+  `board_issues` después.
+- `config.yml` quedó con `incidents_connection_id: 4`.
+
+⏳ **Falta para incidents reales de tallone** (lo hace el dueño): agregar
+`SENTRY_AUTH_TOKEN` al `secrets/prod.env.sops` (SOPS+age) + `git pull` en `/opt/devlake` +
+`docker compose up -d --build sentry-poller`. Recién ahí se postean los 39 incidents reales.
+Escalar a otros projects = onboard (crea `<project>-incidents`) + entrada en `config.yml`.
 
 ---
 

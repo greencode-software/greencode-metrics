@@ -19,6 +19,7 @@ def test_list_incident_issues_single_page():
     assert "projects/greencode/tallone-prod/issues/" in url[0]
     assert kwargs["params"]["environment"] == "production"
     assert kwargs["params"]["query"] == "level:[error,fatal]"
+    assert kwargs["params"]["statsPeriod"] == "14d"  # bounded window (plan: ''|24h|14d)
 
 def test_list_incident_issues_follows_pagination():
     session = MagicMock()

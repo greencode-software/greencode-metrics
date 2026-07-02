@@ -15,7 +15,8 @@ class SentryClient:
 
     def list_incident_issues(self, project_slug: str) -> list[dict]:
         url = f"{self._base}/projects/{self._org}/{project_slug}/issues/"
-        params = {"query": "level:[error,fatal]", "environment": "production", "limit": 100}
+        params = {"query": "level:[error,fatal]", "environment": "production",
+                  "statsPeriod": "14d", "limit": 100}
         out: list[dict] = []
         while url:
             r = self._s.get(url, params=params, timeout=30)

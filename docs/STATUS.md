@@ -211,10 +211,23 @@ webhook connection `<project>-incidents`. Dentro del compose pega a `devlake:808
   `board_issues` después.
 - `config.yml` quedó con `incidents_connection_id: 4`.
 
-⏳ **Falta para incidents reales de tallone** (lo hace el dueño): agregar
-`SENTRY_AUTH_TOKEN` al `secrets/prod.env.sops` (SOPS+age) + `git pull` en `/opt/devlake` +
-`docker compose up -d --build sentry-poller`. Recién ahí se postean los 39 incidents reales.
+✅ **DEPLOYADO 2026-07-02** — `SENTRY_AUTH_TOKEN` (personal token, validado 200 en
+project+issues+activities) agregado al `secrets/prod.env.sops`; `.env` regenerado en el
+droplet; `greencode-sentry-poller` corriendo (`restart: always`, loop cada 30 min). Primer
+ciclo: `{fetched:43, qualified:39, posted:39, errors:0}`. Verificado en MySQL: **39 incidents
+atribuidos a tallone, MTTR promedio ~41.3 h**. Aparece en los paneles CFR/MTTR de Grafana.
+
+> **2 bugs encontrados sólo en el deploy real** (no los pescaban ni los tests ni el incident
+> sintético): (1) endpoint de resolución era `/issues/{id}/activity/` → 404; correcto
+> `/activities/` (plural). (2) DevLake rechaza microsegundos (HTTP 400): parsea millis
+> (`.000`); `normalize_ts` ahora trunca la fracción a 3 dígitos. Ambos fixeados + con test.
+
 Escalar a otros projects = onboard (crea `<project>-incidents`) + entrada en `config.yml`.
+
+⚠️ **Pendientes menores**: (a) el `SENTRY_AUTH_TOKEN` es un **personal token** (atado a
+elamonica) — migrar a org token `sntrys_` con scopes `project:read`+`event:read`+`org:read`
+cuando se pueda. (b) **Rotar `ENCRYPTION_SECRET`**: quedó impreso en una terminal por un
+error de tooling durante esta sesión.
 
 ---
 

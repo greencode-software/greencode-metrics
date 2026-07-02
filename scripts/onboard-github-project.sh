@@ -27,6 +27,15 @@
 #   DEVLAKE_BASIC_AUTH=user:pass        (cuando la API esta detras de Caddy basic auth)
 #   ENABLE_GRAPHQL=false                (default; true requiere PAT con scope read:user)
 #   TIME_AFTER=2025-11-15T00:00:00Z     (cutoff de history; default = 6 meses atras)
+#   DEVLAKE_WEBHOOK_PUBLIC_BASE=https://api.devlake.greencodesoftware.com/api/plugins/webhook
+#                                       (base publica del webhook; se usa solo para
+#                                        imprimir la URL del secret DEVLAKE_DEPLOY_WEBHOOK)
+#
+# DORA deploys: el script crea (idempotente) una webhook connection por project
+# `<project>-deployments` y la bindea al project en el blueprint. DevLake atribuye
+# los deploys por scope->project, NO por el payload, asi que cada project necesita
+# su propia webhook connection (una compartida contaria para todos los projects).
+# Al final imprime la URL que va como repo secret DEVLAKE_DEPLOY_WEBHOOK.
 #
 # Requisitos: curl, jq, python3. gh es opcional (solo necesario si NO usas --token-*).
 # El token nunca se imprime, nunca pasa por argv, solo por stdin/env de subshells.
@@ -69,7 +78,9 @@ fi
 DEVLAKE_API="${DEVLAKE_API:-http://localhost:8088}"
 ENABLE_GRAPHQL="${ENABLE_GRAPHQL:-false}"
 TIME_AFTER="${TIME_AFTER:-$(python3 -c 'from datetime import datetime,timedelta,timezone; print((datetime.now(timezone.utc)-timedelta(days=180)).strftime("%Y-%m-%dT00:00:00Z"))')}"
+DEVLAKE_WEBHOOK_PUBLIC_BASE="${DEVLAKE_WEBHOOK_PUBLIC_BASE:-https://api.devlake.greencodesoftware.com/api/plugins/webhook}"
 CONN_NAME="${PROJECT_NAME}-github"
+WEBHOOK_CONN_NAME="${PROJECT_NAME}-deployments"
 
 # ---------- helpers ----------
 log()  { printf "\n\033[1;34m→\033[0m %s\n" "$*" >&2; }
@@ -213,6 +224,19 @@ else
   ok "creado (con DORA habilitado)"
 fi
 
+# ---------- 6b. webhook connection de deployments (DORA Deploy Frequency) ----------
+log "Webhook de deployments \"$WEBHOOK_CONN_NAME\""
+WH_ID=$(dl_curl "$DEVLAKE_API/plugins/webhook/connections" \
+  | jq --arg n "$WEBHOOK_CONN_NAME" '[.[]|select(.name==$n)][0].id // empty')
+if [[ -n "$WH_ID" ]]; then
+  ok "ya existe (id=$WH_ID)"
+else
+  WH_ID=$(dl_curl -X POST -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg n "$WEBHOOK_CONN_NAME" '{name:$n}')" \
+    "$DEVLAKE_API/plugins/webhook/connections" | jq '.id')
+  ok "creada (id=$WH_ID) — deploys iran a scope webhook:$WH_ID"
+fi
+
 # ---------- 7. blueprint: mergear nuestra connection ----------
 log "Blueprint: bindeando connection→scope al project"
 BP_JSON=$(dl_curl "$DEVLAKE_API/blueprints?projectName=$PROJECT_NAME")
@@ -221,12 +245,20 @@ if [[ -z "$BP_ID" ]]; then
   err "no encontre blueprint para project $PROJECT_NAME"; exit 1
 fi
 
-# Mergear (o agregar) nuestra connection en el array existente, preservando otras.
+# Mergear (o agregar) nuestras connections (github + webhook) en el array existente,
+# preservando otras. El bloque webhook hace que DevLake regenere el projectMapping con
+# {rowId:"webhook:<id>", table:"cicd_scopes"} → los deploys cuentan para ESTE project.
 NEW_CONN_BLOCK=$(jq -n --argjson cid "$CONN_ID" --argjson sid "$GITHUB_ID" \
   '{pluginName:"github", connectionId:$cid, scopes:[{scopeId:($sid|tostring)}]}')
-PATCH_BODY=$(jq --argjson new "$NEW_CONN_BLOCK" --arg ta "$TIME_AFTER" '
+WH_CONN_BLOCK=$(jq -n --argjson cid "$WH_ID" \
+  '{pluginName:"webhook", connectionId:$cid, scopes:[{scopeId:($cid|tostring)}]}')
+PATCH_BODY=$(jq --argjson new "$NEW_CONN_BLOCK" --argjson wh "$WH_CONN_BLOCK" --arg ta "$TIME_AFTER" '
   .blueprints[0]
-  | .connections = ((.connections // []) | map(select(.pluginName!="github" or .connectionId!=$new.connectionId)) + [$new])
+  | .connections = ((.connections // [])
+      | map(select(
+          (.pluginName!="github"  or .connectionId!=$new.connectionId) and
+          (.pluginName!="webhook" or .connectionId!=$wh.connectionId)))
+      + [$new, $wh])
   | {connections: .connections, timeAfter: $ta}
 ' <<<"$BP_JSON")
 dl_curl -X PATCH -H 'Content-Type: application/json' -d "$PATCH_BODY" \
@@ -272,8 +304,15 @@ echo
 echo "  Project:       $PROJECT_NAME"
 echo "  Repo:          $OWNER_REPO (githubId=$GITHUB_ID)"
 echo "  Connection:    id=$CONN_ID  ($CONN_NAME)"
+echo "  Webhook deploy:id=$WH_ID  ($WEBHOOK_CONN_NAME) → scope webhook:$WH_ID"
 echo "  Blueprint:     id=$BP_ID    (cron diario, history desde $TIME_AFTER)"
 echo "  Pipeline:      id=$PIPE_ID  TASK_COMPLETED"
+echo
+echo "  DORA — instrumentar deploys del repo (Deploy Frequency + Lead Time):"
+echo "    1) Setear el repo secret DEVLAKE_DEPLOY_WEBHOOK de $OWNER_REPO a:"
+echo "         $DEVLAKE_WEBHOOK_PUBLIC_BASE/connections/$WH_ID/deployments"
+echo "       (ej: gh secret set DEVLAKE_DEPLOY_WEBHOOK --repo $OWNER_REPO --body <URL>)"
+echo "    2) Agregar el workflow al repo con la skill setup-dora."
 echo
 echo "  Grafana (filtrado a este project):"
 echo "    Engineering Overview: http://localhost:3001/d/ZF6abXX7z/engineering-overview?var-project=$PROJECT_NAME"

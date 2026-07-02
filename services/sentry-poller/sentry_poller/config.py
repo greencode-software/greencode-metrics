@@ -24,12 +24,22 @@ _REQUIRED_PROJ = ("devlake_project", "sentry_project", "incidents_connection_id"
 
 def load_config(path: str) -> Config:
     with open(path) as fh:
-        raw = yaml.safe_load(fh) or {}
+        try:
+            raw = yaml.safe_load(fh)
+        except yaml.YAMLError as exc:
+            raise ValueError(f"config: YAML inválido: {exc}") from exc
+    raw = raw or {}
+    if not isinstance(raw, dict):
+        raise ValueError("config: el root debe ser un mapping")
     for key in _REQUIRED_TOP:
         if key not in raw:
             raise ValueError(f"config: falta campo requerido '{key}'")
+    if not isinstance(raw["projects"], list):
+        raise ValueError("config: 'projects' debe ser una lista")
     projects = []
     for i, p in enumerate(raw["projects"]):
+        if not isinstance(p, dict):
+            raise ValueError(f"config: project[{i}] debe ser un mapping")
         for key in _REQUIRED_PROJ:
             if key not in p:
                 raise ValueError(f"config: project[{i}] falta '{key}'")

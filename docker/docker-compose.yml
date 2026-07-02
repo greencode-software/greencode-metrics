@@ -100,6 +100,18 @@ services:
     depends_on:
       - devlake
 
+  sentry-poller:
+    build: ../services/sentry-poller
+    container_name: greencode-sentry-poller
+    restart: always
+    environment:
+      SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN}
+    depends_on:
+      - devlake
+    # config.yml viaja en la imagen; para overridear sin rebuild, montar:
+    # volumes:
+    #   - ../services/sentry-poller/config.yml:/app/config.yml:ro
+
 volumes:
   mysql-storage:
   grafana-storage:

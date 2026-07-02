@@ -81,6 +81,7 @@ TIME_AFTER="${TIME_AFTER:-$(python3 -c 'from datetime import datetime,timedelta,
 DEVLAKE_WEBHOOK_PUBLIC_BASE="${DEVLAKE_WEBHOOK_PUBLIC_BASE:-https://api.devlake.greencodesoftware.com/api/plugins/webhook}"
 CONN_NAME="${PROJECT_NAME}-github"
 WEBHOOK_CONN_NAME="${PROJECT_NAME}-deployments"
+INCIDENTS_CONN_NAME="${PROJECT_NAME}-incidents"
 
 # ---------- helpers ----------
 log()  { printf "\n\033[1;34m→\033[0m %s\n" "$*" >&2; }
@@ -237,6 +238,19 @@ else
   ok "creada (id=$WH_ID) — deploys iran a scope webhook:$WH_ID"
 fi
 
+# ---------- 6c. webhook connection de incidents (DORA CFR/MTTR) ----------
+log "Webhook de incidents \"$INCIDENTS_CONN_NAME\""
+INC_ID=$(dl_curl "$DEVLAKE_API/plugins/webhook/connections" \
+  | jq --arg n "$INCIDENTS_CONN_NAME" '[.[]|select(.name==$n)][0].id // empty')
+if [[ -n "$INC_ID" ]]; then
+  ok "ya existe (id=$INC_ID)"
+else
+  INC_ID=$(dl_curl -X POST -H 'Content-Type: application/json' \
+    -d "$(jq -n --arg n "$INCIDENTS_CONN_NAME" '{name:$n}')" \
+    "$DEVLAKE_API/plugins/webhook/connections" | jq '.id')
+  ok "creada (id=$INC_ID) — incidents iran a scope webhook:$INC_ID"
+fi
+
 # ---------- 7. blueprint: mergear nuestra connection ----------
 log "Blueprint: bindeando connection→scope al project"
 BP_JSON=$(dl_curl "$DEVLAKE_API/blueprints?projectName=$PROJECT_NAME")
@@ -252,13 +266,15 @@ NEW_CONN_BLOCK=$(jq -n --argjson cid "$CONN_ID" --argjson sid "$GITHUB_ID" \
   '{pluginName:"github", connectionId:$cid, scopes:[{scopeId:($sid|tostring)}]}')
 WH_CONN_BLOCK=$(jq -n --argjson cid "$WH_ID" \
   '{pluginName:"webhook", connectionId:$cid, scopes:[{scopeId:($cid|tostring)}]}')
-PATCH_BODY=$(jq --argjson new "$NEW_CONN_BLOCK" --argjson wh "$WH_CONN_BLOCK" --arg ta "$TIME_AFTER" '
+INC_CONN_BLOCK=$(jq -n --argjson cid "$INC_ID" \
+  '{pluginName:"webhook", connectionId:$cid, scopes:[{scopeId:($cid|tostring)}]}')
+PATCH_BODY=$(jq --argjson new "$NEW_CONN_BLOCK" --argjson wh "$WH_CONN_BLOCK" --argjson inc "$INC_CONN_BLOCK" --arg ta "$TIME_AFTER" '
   .blueprints[0]
   | .connections = ((.connections // [])
       | map(select(
           (.pluginName!="github"  or .connectionId!=$new.connectionId) and
-          (.pluginName!="webhook" or .connectionId!=$wh.connectionId)))
-      + [$new, $wh])
+          (.pluginName!="webhook" or (.connectionId!=$wh.connectionId and .connectionId!=$inc.connectionId))))
+      + [$new, $wh, $inc])
   | {connections: .connections, timeAfter: $ta}
 ' <<<"$BP_JSON")
 dl_curl -X PATCH -H 'Content-Type: application/json' -d "$PATCH_BODY" \
@@ -305,6 +321,7 @@ echo "  Project:       $PROJECT_NAME"
 echo "  Repo:          $OWNER_REPO (githubId=$GITHUB_ID)"
 echo "  Connection:    id=$CONN_ID  ($CONN_NAME)"
 echo "  Webhook deploy:id=$WH_ID  ($WEBHOOK_CONN_NAME) → scope webhook:$WH_ID"
+echo "  Webhook incident:id=$INC_ID  ($INCIDENTS_CONN_NAME) → scope webhook:$INC_ID"
 echo "  Blueprint:     id=$BP_ID    (cron diario, history desde $TIME_AFTER)"
 echo "  Pipeline:      id=$PIPE_ID  TASK_COMPLETED"
 echo
@@ -313,6 +330,7 @@ echo "    1) Setear el repo secret DEVLAKE_DEPLOY_WEBHOOK de $OWNER_REPO a:"
 echo "         $DEVLAKE_WEBHOOK_PUBLIC_BASE/connections/$WH_ID/deployments"
 echo "       (ej: gh secret set DEVLAKE_DEPLOY_WEBHOOK --repo $OWNER_REPO --body <URL>)"
 echo "    2) Agregar el workflow al repo con la skill setup-dora."
+echo "    3) CFR/MTTR: poné incidents_connection_id: $INC_ID para $PROJECT_NAME en services/sentry-poller/config.yml"
 echo
 echo "  Grafana (filtrado a este project):"
 echo "    Engineering Overview: http://localhost:3001/d/ZF6abXX7z/engineering-overview?var-project=$PROJECT_NAME"

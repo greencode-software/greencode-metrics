@@ -63,7 +63,7 @@ greencode-devlake-caddy       caddy:2.8-alpine                0.0.0.0:80, 443, 4
 |---|---|---|
 | Grafana | https://devlake.greencodesoftware.com | Google OAuth (`@greencodesoftware.com`) |
 | DevLake API admin | https://api.devlake.greencodesoftware.com/api/... | Basic auth (user `greencode`) |
-| DevLake webhook público | ⚠️ **ROTO** (ver §"Webhook connections") — hoy da 404/401, ningún path acepta POST sin basic-auth | — |
+| DevLake webhook público | https://api.devlake.greencodesoftware.com/api/plugins/webhook/... | Sin auth (arreglado+deployado 2026-07-02; ver §"Webhook connections") |
 | Config UI | `ssh -L 4000:127.0.0.1:4000 root@134.199.247.25` → http://localhost:4000 | SSH tunnel |
 
 ### Subdominios — por qué hay dos
@@ -99,30 +99,36 @@ Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO ba
 - Tag `v1` de greencode-metrics creado (apunta a master `a353558`) → `dora-deploy@v1`
   resuelve.
 
-> 🔴 **CORRECCIÓN 2026-07-02 — el webhook NO es posteable hoy.** La afirmación previa
-> ("path público verificado abierto, GET→404 = existe, sin auth") era **incorrecta**.
-> Probado contra prod (`api.devlake.greencodesoftware.com`):
->
-> | Path | Resultado |
-> |---|---|
-> | `/api/plugins/webhook/...` (el del secret y las tablas de arriba) | **404** — la base `/api/` no rutea al backend |
-> | `/api/rest/plugins/webhook/connections/1/deployments` | **401** Caddy Basic (`www-authenticate: Basic realm="restricted"`) |
-> | `/api/rest/plugins/webhook/connections/2/issues` | **401** Caddy Basic |
+> ✅ **RESUELTO 2026-07-02.** Durante el PoC del spike de Sentry se descubrió que el
+> webhook estaba **roto** (la afirmación previa "GET→404 = existe, sin auth" era
+> incorrecta) y se corrigió + deployó. Historia:
 >
 > **Causa raíz**: el bloque `handle_path /api/plugins/webhook/*` del `docker/caddy/Caddyfile`
-> reescribe a `/api/plugins/webhook{uri}` y proxyea a `devlake:8080`, pero el backend
-> sirve la API en **root** (`/plugins/...`, ver arriba) → el `/api` sobrante hace 404.
-> Y `/api/rest/*` cae en el `handle /api/*` con basic-auth de Caddy → 401.
+> reescribía a `/api/plugins/webhook{uri}`, pero el backend DevLake sirve la API en
+> **root** (`/plugins/...`) → el `/api` sobrante daba **404**. Consecuencia:
+> `dora-deploy` (que postea sin auth) **nunca registró un solo deploy** y, como la
+> action sólo emite `::warning::` sin fallar, pasó inadvertido (causa raíz del AC
+> abierto del issue #10). El webhook de Sentry tenía el mismo bloqueo.
 >
-> **Impacto**: `dora-deploy` (que postea sin auth a la URL rota) **nunca registró un
-> solo deploy** — y como la action sólo emite `::warning::` sin fallar, pasó
-> inadvertido. Por eso Deploy Frequency jamás iba a aparecer en Grafana (issue #10).
-> El webhook de Sentry (fase 2) tiene el mismo bloqueo.
+> **Fix (commit `f2f8b99` en master, deployado a prod)**: reemplazar el bloque por
+> `handle /api/plugins/webhook/*` + `uri strip_prefix /api`. La URL pública NO cambia;
+> sólo se corrige el mapeo interno de Caddy. El resto de `/api/*` sigue tras basic-auth.
 >
-> **Fix elegido**: A — bypass en Caddy (eximir del basic-auth sólo los paths de
-> webhook y corregir el rewrite al path real del backend). Requiere confirmar en la
-> VM el path exacto que sirve `devlake:8080`. Detalle en
-> `docs/spikes/2026-07-02-sentry-devlake-webhook-mapping.md §"Hallazgo de infra"`.
+> **Verificado end-to-end 2026-07-02** contra prod:
+> - `POST /api/plugins/webhook/connections/2/issues` (create incident) → **200 success**
+> - `POST /api/plugins/webhook/connections/2/issue/<key>/close` → **200 success**
+> - `POST .../connections/1/deployments {}` → **400** (rutea al backend, valida body)
+> - admin `/api/rest/version` → **401** (sigue protegido) · Grafana → **200**
+>
+> ⚠️ **Gotcha del deploy (no re-descubrir)**: el Caddyfile se monta como **bind-mount
+> de archivo único**. `git pull` reemplaza el archivo con un **inode nuevo**, pero el
+> container sigue viendo el inode viejo → `caddy reload` recarga el config **viejo**
+> (validate da OK y rc=0, engañoso). Hay que **`docker restart greencode-devlake-caddy`**
+> para que re-resuelva el mount. Un `reload` solo no alcanza tras un `git pull`.
+>
+> **Pendiente**: quedó un incident de prueba `SPIKE-TEST-20260702-01` (cerrado) en la
+> connection 2. Borrarlo del MySQL si se quiere limpieza fina (no afecta CFR porque
+> aún no hay deployments registrados). Retomar el relay de Sentry (spike §diseño).
 
 ---
 

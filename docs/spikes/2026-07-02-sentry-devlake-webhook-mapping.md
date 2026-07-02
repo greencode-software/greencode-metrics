@@ -139,7 +139,30 @@ workflow simple (1 trigger + switch por `action` + 2 HTTP requests).
 3. Decidir n8n vs micro-servicio y crear el issue de implementación.
 4. Corregir el drift de `docs/CONVENTIONS.md §3` y crear `docs/sentry-webhook-payload.md`.
 
-## Hallazgo de infra (2026-07-02) — el webhook NO es posteable hoy
+## ✅ Resolución (2026-07-02) — webhook arreglado + PoC validado
+
+El hallazgo de infra de abajo se **corrigió y deployó** en la misma sesión:
+
+- **Fix**: `docker/caddy/Caddyfile` — `handle /api/plugins/webhook/*` + `uri strip_prefix /api`
+  (commit `f2f8b99` en master, deployado a prod). El backend sirve en root (`/plugins/...`);
+  el bloque viejo reintroducía `/api` → 404.
+- **Gotcha del deploy**: el Caddyfile es un bind-mount de archivo único → `git pull`
+  crea un inode nuevo que el container no ve; hay que `docker restart greencode-devlake-caddy`
+  (un `caddy reload` recarga el config viejo y engaña con "Valid configuration").
+- **PoC end-to-end validado** contra `api.devlake.greencodesoftware.com` (connection 2):
+  - `POST .../connections/2/issues` (create `type=INCIDENT`) → **200 success**
+  - `POST .../connections/2/issue/SPIKE-TEST-20260702-01/close` → **200 success**
+  → confirma el mapeo de la sección "El mapeo" de arriba: el lado DevLake acepta
+  alta + cierre. Falta sólo el **relay** que traduzca el payload de Sentry.
+- Quedó un incident de prueba `SPIKE-TEST-20260702-01` (cerrado) — borrar del MySQL
+  si se quiere limpieza fina.
+
+**Estado del spike**: lado DevLake ✅ validado. Próximo: implementar el relay (n8n)
+que mapee el Integration Platform "issue" webhook de Sentry → estos dos endpoints.
+
+---
+
+## Hallazgo de infra (2026-07-02) — [histórico] el webhook estaba roto
 
 Al intentar el PoC de escritura se descubrió que **ningún** path de webhook acepta
 un POST sin credenciales. Probado contra `api.devlake.greencodesoftware.com`:

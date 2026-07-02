@@ -34,7 +34,9 @@ class SentryClient:
         return None, None
 
     def resolution_date(self, issue_id: str) -> str | None:
-        r = self._s.get(f"{self._base}/issues/{issue_id}/activity/", timeout=30)
+        # endpoint es "activities" (plural); "activity" (singular) da 404 en Sentry SaaS.
+        # el body sigue trayendo la lista bajo la key "activity".
+        r = self._s.get(f"{self._base}/issues/{issue_id}/activities/", timeout=30)
         r.raise_for_status()
         latest = None
         for act in r.json().get("activity", []):

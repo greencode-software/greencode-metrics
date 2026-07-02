@@ -47,6 +47,8 @@ def test_resolution_date_picks_set_resolved():
     ]})
     c = SentryClient("tok", "greencode", session=session)
     assert c.resolution_date("1") == "2026-07-01T10:00:00Z"
+    # regression guard: must hit the plural "activities/" path (singular 404s on Sentry SaaS)
+    assert session.get.call_args.args[0].endswith("/issues/1/activities/")
 
 def test_resolution_date_none_when_absent():
     session = MagicMock()

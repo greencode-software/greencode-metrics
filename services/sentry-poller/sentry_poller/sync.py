@@ -14,19 +14,19 @@ def sync_project(sentry, devlake, proj: ProjectCfg, dry_run: bool = False) -> di
         if not qualifies(issue):
             continue
         stats["qualified"] += 1
-        resolution = sentry.resolution_date(issue["id"]) if issue["status"] == "resolved" else None
-        payload = to_devlake_payload(issue, resolution)
-        if dry_run:
-            log.info("[dry-run] %s -> conn %s: %s", proj.sentry_project,
-                     proj.incidents_connection_id, payload)
-            stats["posted"] += 1
-            continue
         try:
+            resolution = sentry.resolution_date(issue["id"]) if issue["status"] == "resolved" else None
+            payload = to_devlake_payload(issue, resolution)
+            if dry_run:
+                log.info("[dry-run] %s -> conn %s: %s", proj.sentry_project,
+                         proj.incidents_connection_id, payload)
+                stats["posted"] += 1
+                continue
             devlake.post_issue(proj.incidents_connection_id, payload)
             stats["posted"] += 1
-        except Exception as exc:  # noqa: BLE001 — un issue no debe frenar el resto
+        except Exception as exc:  # noqa: BLE001 — un issue no debe frenar el resto del project
             stats["errors"] += 1
-            log.warning("post falló para %s/%s: %s", proj.sentry_project, issue["id"], exc)
+            log.warning("procesar issue %s/%s falló: %s", proj.sentry_project, issue.get("id"), exc)
     return stats
 
 

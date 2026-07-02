@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 from sentry_poller.config import ProjectCfg
-from sentry_poller.sync import sync_project
+from sentry_poller.sync import sync_project, sync_all
 
 PROJ = ProjectCfg("tallone-sistema-de-gestion", "tallone-prod", 4)
 
@@ -51,3 +51,39 @@ def test_sync_counts_post_errors_and_continues():
     stats = sync_project(sentry, devlake, PROJ)
     assert stats["posted"] == 1
     assert stats["errors"] == 1
+
+def test_sync_project_counts_error_when_resolution_raises():
+    # resolution_date raising mid-loop must count as 1 error and NOT abort the batch
+    sentry = MagicMock()
+    sentry.list_incident_issues.return_value = [_issue("1", status="resolved"), _issue("2")]
+    sentry.resolution_date.side_effect = RuntimeError("sentry down")
+    devlake = MagicMock()
+    stats = sync_project(sentry, devlake, PROJ)
+    assert stats["qualified"] == 2
+    assert stats["errors"] == 1     # issue 1 (resolved) failed in resolution_date
+    assert stats["posted"] == 1     # issue 2 (unresolved) still posted
+
+def test_sync_all_isolates_project_failure():
+    proj_ok = ProjectCfg("proj-a", "a-prod", 4)
+    proj_bad = ProjectCfg("proj-b", "b-prod", 5)
+    def _list(slug):
+        if slug == "b-prod":
+            raise RuntimeError("boom")
+        return [_issue("1")]
+    sentry = MagicMock()
+    sentry.list_incident_issues.side_effect = _list
+    devlake = MagicMock()
+    results = sync_all(sentry, devlake, [proj_ok, proj_bad])
+    assert len(results) == 2
+    assert results[0]["posted"] == 1    # proj-a succeeded
+    assert results[1]["errors"] == 1    # proj-b failure isolated
+
+def test_sync_all_aggregates_multiple_projects():
+    proj_a = ProjectCfg("proj-a", "a-prod", 4)
+    proj_b = ProjectCfg("proj-b", "b-prod", 5)
+    sentry = MagicMock()
+    sentry.list_incident_issues.return_value = [_issue("1")]
+    devlake = MagicMock()
+    results = sync_all(sentry, devlake, [proj_a, proj_b])
+    assert len(results) == 2
+    assert all(r["posted"] == 1 for r in results)

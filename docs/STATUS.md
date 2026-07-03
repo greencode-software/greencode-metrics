@@ -80,11 +80,17 @@ Grafana y DevLake comparten el namespace `/api/` (ambos exponen `/api/user`, `/a
 2026-07-01. Connection id=2, Blueprint id=2 (history desde 2026-03-01 = creación del
 repo). Piloto de la action `dora-deploy`.
 
-**Acceso a la API para onboardear**: como el stack prod NO expone la API a internet
-(el firewall de DO bloquea 8088), el onboarding se corre por túnel SSH:
-`ssh -N -L 18088:127.0.0.1:8088 root@134.199.247.25` y luego
-`env -u GITHUB_TOKEN DEVLAKE_API=http://localhost:18088 ./scripts/onboard-github-project.sh ...`.
-Importante: la API de DevLake sirve en **root** (`/projects`, `/plugins`), NO bajo `/api`.
+**Acceso a la API para onboardear**: desde 2026-07-03 el API admin es **público** en
+`https://api.devlake.greencodesoftware.com/api/...` (basic auth, user `greencode`),
+así que el onboarding corre **sin túnel** — self-service vía skill `/onboard-dora`
+(`<owner/repo> <project>`) o el script `onboard-github-project.sh` con
+`DEVLAKE_API=https://api.devlake.greencodesoftware.com/api` + `DEVLAKE_BASIC_AUTH`.
+Verificado e2e contra prod (`elamonica/tallone` idempotente, pipeline TASK_COMPLETED).
+Importante: el backend sirve la REST API en **root** (`/projects`, `/plugins`), NO bajo
+`/api`; Caddy strippea el `/api` en la ruta pública (ver §"Webhook connections" y el
+Caddyfile `route {}` del bloque `api.{$DOMAIN}`). El **túnel SSH** a 8088 queda como
+fallback si el API público está caído (backend directo = sin `/api`). Runbook completo:
+`docs/runbooks/dora-onboarding.md`; instructivo para dueños: `docs/conectar-repo-a-dora.md`.
 
 ### Webhook connections (DORA) — creadas 2026-07-01
 
@@ -289,7 +295,8 @@ observado en el droplet (`docker ps`):
    brecha de defense-in-depth, no una exposición activa.
 2. **`config-ui` NO escucha en `127.0.0.1:4000`** (contenedor Up pero sin port
    binding). El acceso admin vía SSH tunnel a 4000 documentado más abajo **no
-   funciona** hoy. Para llegar a la API se usa el túnel a 8088 (ver §"Datos en prod").
+   funciona** hoy. (Para la API ya no hace falta túnel: el admin es público con basic
+   auth desde 2026-07-03 — ver §"Datos en prod". El túnel a 8088 quedó como fallback.)
 
 **Causa probable**: el stack se levantó con el compose base sin el `-f` del overlay,
 o los `ports: []` no se aplicaron. **Fix pendiente**: re-desplegar con

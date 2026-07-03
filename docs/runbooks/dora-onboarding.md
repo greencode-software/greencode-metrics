@@ -23,15 +23,32 @@ pero queda huérfano (sin `project`) y no hay commits para calcular Lead Time.
 
 Sólo para repos **nuevos**. Los ya trackeados (pinvest, tallone) saltan este paso.
 
-La API de DevLake NO está expuesta a internet (firewall bloquea 8088) → se corre
-por **túnel SSH**:
+### Camino recomendado: skill `/onboard-dora` (self-service, sin SSH)
+
+Desde Claude Code, con el plugin GreenQA ≥ **0.4.1**:
+
+```
+/onboard-dora <owner/repo> <project-name-kebab>
+```
+
+Corre contra el **API público** de DevLake
+(`https://api.devlake.greencodesoftware.com/api`, basic auth) — no hace falta túnel
+ni acceso al droplet. En el `.env` del plugin: `DEVLAKE_API` (con el sufijo `/api`) y
+`DEVLAKE_BASIC_AUTH`; el token de GitHub sale de `GITHUB_TOKEN_<OWNER>` o `GITHUB_TOKEN`.
+Es idempotente (crea/actualiza connection, scope, project con DORA on, blueprint cron
+diario). El paso a paso para dueños de proyecto está en `docs/conectar-repo-a-dora.md`.
+
+> Ojo con la firma: el skill toma `<owner/repo> <project>`; el script de abajo toma el
+> orden inverso `<project> <owner/repo>`.
+
+### Fallback de Plataforma: script directo
+
+El skill envuelve `scripts/onboard-github-project.sh`. Si el skill no está disponible
+—o querés correrlo desde este repo— el script apunta al mismo API público:
 
 ```bash
-# Terminal 1: abrir el túnel (dejar corriendo)
-ssh -N -L 18088:127.0.0.1:8088 root@134.199.247.25
-
-# Terminal 2: correr el onboard (desde el repo greencode-metrics)
-env -u GITHUB_TOKEN DEVLAKE_API=http://localhost:18088 \
+export DEVLAKE_BASIC_AUTH="greencode:<basic-pass>"
+env -u GITHUB_TOKEN DEVLAKE_API="https://api.devlake.greencodesoftware.com/api" \
   ./scripts/onboard-github-project.sh <project-name-kebab> <owner/repo>
 ```
 
@@ -41,6 +58,11 @@ env -u GITHUB_TOKEN DEVLAKE_API=http://localhost:18088 \
   blueprint (cron diario, history 6 meses por default) y dispara el pipeline inicial.
 - Si el repo vive en la org y tu token del keyring no lo ve, pasá el PAT con
   `--token-env VARNAME` (ver `--help` del script).
+- **Túnel SSH** (último recurso, sólo si el API público está caído): abrí
+  `ssh -N -L 18088:127.0.0.1:8088 root@134.199.247.25` y usá
+  `DEVLAKE_API=http://localhost:18088` **sin** el sufijo `/api` (el backend, al que
+  llegás directo por el túnel, sirve la REST API en root — el `/api` lo strippea Caddy
+  sólo en la ruta pública).
 
 ---
 

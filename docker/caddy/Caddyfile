@@ -91,16 +91,25 @@ api.{$DOMAIN} {
     # ---------- 2) resto de la API DevLake: basic auth ----------
     # El backend sirve en ROOT, no bajo /api
     # (GET http://devlake:8080/projects -> 200 ; GET .../api/projects -> 404).
-    # Usamos handle_path (no handle + uri strip_prefix): handle_path strippea el
-    # prefijo /api de forma ESTRUCTURAL (en el matcher). Con `handle + basic_auth +
-    # uri strip_prefix`, el strip se cae al adaptar (reordenamiento de directivas de
-    # Caddy), dejando /api/projects -> backend /api/projects -> 404. Con handle_path,
-    # /api/projects -> /projects -> 200. Sin el strip la API admin queda inalcanzable
-    # desde internet (onboard self-service via /onboard-dora).
-    handle_path /api/* {
-        basic_auth {
-            {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
-        }
+    # Hay que strippear /api antes de proxyear.
+    #
+    # IMPORTANTE (verificado 2026-07-03 via `caddy adapt`): el basic_auth NO puede
+    # ir DENTRO del mismo `handle` que el strip. Caddy descarta el rewrite del
+    # subroute cuando hay un handler de authentication en el bloque — el subroute
+    # admin quedaba [authentication, reverse_proxy], SIN el strip, y /api/projects
+    # llegaba al backend como /api/projects -> 404. (Pasa igual con `uri strip_prefix`
+    # y con `handle_path`.) Por eso el basic_auth va AFUERA, como directiva con
+    # matcher (excluyendo el webhook), y el `handle` queda con solo
+    # [uri strip_prefix, reverse_proxy] — idéntico al bloque webhook que sí strippea.
+    @admin {
+        path /api/*
+        not path /api/plugins/webhook/*
+    }
+    basic_auth @admin {
+        {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+    }
+    handle /api/* {
+        uri strip_prefix /api
         reverse_proxy devlake:8080
     }
 

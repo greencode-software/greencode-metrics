@@ -238,6 +238,8 @@ Tiempo: 15-20 min si tenes el Volume + Reserved IP intactos.
 | `curl https://...` da `connection refused` | Cloud Firewall cierra 443 | abrir 443 en el FW |
 | Caddy no obtiene cert: `no such host` | DNS no propagó | esperar; `docker compose restart caddy` |
 | Caddy no obtiene cert despues de varios intentos | rate limit Let's Encrypt | usar staging mientras testeas: en Caddyfile global, `acme_ca https://acme-staging-v02.api.letsencrypt.org/directory` |
+| Cambié el Caddyfile + `git pull` pero el cambio no aplica (config viejo sigue corriendo) | El Caddyfile es **bind-mount de archivo único**; `git pull` crea inode nuevo pero el container ve el viejo → `caddy reload` recarga el config **viejo** (validate da OK y rc=0, engañoso) | **`docker restart greencode-devlake-caddy`** (un `reload` solo NO alcanza tras un pull). Antes de tocar prod, validá el JSON adaptado con `caddy adapt --config <Caddyfile>` (es **dry-run**, no toca el server corriendo) |
+| `/api/...` admin da 404 en todo tras editar el Caddyfile | Caddy **dropea el `rewrite` del strip de `/api`** cuando comparte subroute con un handler `authentication` (falla con `handle`+`uri strip_prefix`, `handle_path` y `basic_auth` afuera) — verificado con `caddy adapt` | poner el strip en un bloque `route {}` a nivel de route, afuera de cualquier `handle`+auth (ver bloque `api.{$DOMAIN}` del `docker/caddy/Caddyfile`) |
 | `/api/projects` da 502 | DevLake no arrancó | `docker logs greencode-devlake \| tail -50` |
 | Login Grafana redirige a localhost | `GF_SERVER_ROOT_URL` mal | poner `https://devlake.greencodesoftware.com` en .env y reiniciar grafana |
 | Webhook deploys no aparece en DORA | falta job `org` que hace project_mapping | re-correr blueprint del project; o esperar cron diario |

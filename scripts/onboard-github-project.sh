@@ -253,10 +253,24 @@ fi
 
 # ---------- 7. blueprint: mergear nuestra connection ----------
 log "Blueprint: bindeando connection→scope al project"
-BP_JSON=$(dl_curl "$DEVLAKE_API/blueprints?projectName=$PROJECT_NAME")
-BP_ID=$(jq '.blueprints[0].id // empty' <<<"$BP_JSON")
+# El blueprint del project se resuelve por el project mismo: GET /projects/<name>
+# devuelve .blueprint.id de forma confiable. NO usar GET /blueprints?projectName=... :
+# ese endpoint NO filtra por projectName y devuelve la lista completa ordenada por id
+# desc, así que .blueprints[0] agarraría el blueprint de OTRO project (y al PATCHear
+# lo corromperíamos). Bug histórico ya verificado en vivo.
+BP_ID=$(dl_curl "$DEVLAKE_API/projects/$PROJECT_NAME" | jq -r '.blueprint.id // empty')
 if [[ -z "$BP_ID" ]]; then
   err "no encontre blueprint para project $PROJECT_NAME"; exit 1
+fi
+# Traer el objeto blueprint directo (con .name, .connections, .timeAfter).
+BP_JSON=$(dl_curl "$DEVLAKE_API/blueprints/$BP_ID")
+# Guard anti-drift: el blueprint debe ser el del project. DevLake nombra los blueprints
+# auto-generados como "<project>-Blueprint". Si el nombre no matchea, abortamos antes de
+# PATCHear para no corromper otro project por un BP_ID equivocado.
+BP_NAME=$(jq -r '.name // ""' <<<"$BP_JSON")
+if [[ "$BP_NAME" != "$PROJECT_NAME-Blueprint" ]]; then
+  err "blueprint $BP_ID tiene nombre inesperado \"$BP_NAME\" (esperaba \"$PROJECT_NAME-Blueprint\"); aborto para no corromper otro project"
+  exit 1
 fi
 
 # Mergear (o agregar) nuestras connections (github + webhook) en el array existente,
@@ -269,8 +283,7 @@ WH_CONN_BLOCK=$(jq -n --argjson cid "$WH_ID" \
 INC_CONN_BLOCK=$(jq -n --argjson cid "$INC_ID" \
   '{pluginName:"webhook", connectionId:$cid, scopes:[{scopeId:($cid|tostring)}]}')
 PATCH_BODY=$(jq --argjson new "$NEW_CONN_BLOCK" --argjson wh "$WH_CONN_BLOCK" --argjson inc "$INC_CONN_BLOCK" --arg ta "$TIME_AFTER" '
-  .blueprints[0]
-  | .connections = ((.connections // [])
+  .connections = ((.connections // [])
       | map(select(
           (.pluginName!="github"  or .connectionId!=$new.connectionId) and
           (.pluginName!="webhook" or (.connectionId!=$wh.connectionId and .connectionId!=$inc.connectionId))))

@@ -89,15 +89,18 @@ api.{$DOMAIN} {
     }
 
     # ---------- 2) resto de la API DevLake: basic auth ----------
-    # Mismo motivo que el bloque webhook: el backend sirve en ROOT, no bajo /api
+    # El backend sirve en ROOT, no bajo /api
     # (GET http://devlake:8080/projects -> 200 ; GET .../api/projects -> 404).
-    # Sin el strip, /api/projects llegaba como /api/projects -> 404, lo que dejaba
-    # inalcanzable la API admin desde internet (onboard self-service via /onboard-dora).
-    handle /api/* {
+    # Usamos handle_path (no handle + uri strip_prefix): handle_path strippea el
+    # prefijo /api de forma ESTRUCTURAL (en el matcher). Con `handle + basic_auth +
+    # uri strip_prefix`, el strip se cae al adaptar (reordenamiento de directivas de
+    # Caddy), dejando /api/projects -> backend /api/projects -> 404. Con handle_path,
+    # /api/projects -> /projects -> 200. Sin el strip la API admin queda inalcanzable
+    # desde internet (onboard self-service via /onboard-dora).
+    handle_path /api/* {
         basic_auth {
             {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
         }
-        uri strip_prefix /api
         reverse_proxy devlake:8080
     }
 

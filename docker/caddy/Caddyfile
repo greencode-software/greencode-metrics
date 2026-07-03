@@ -68,55 +68,40 @@ api.{$DOMAIN} {
         format json
     }
 
-    # ---------- 1) webhook publico (NO auth) ----------
-    # Sentry alerta y dora-deploy action postean aca. La proteccion real es:
-    # 1) la URL incluye un connection-id secreto-por-oscuridad,
-    # 2) HMAC signing en Sentry (configurable).
+    # El backend DevLake sirve la API en ROOT, no bajo /api (verificado 2026-07-02
+    # contra el container: GET devlake:8080/projects -> 200 ; /api/projects -> 404).
+    # Hay que strippear el prefijo /api antes de proxyear.
     #
-    # IMPORTANTE (verificado 2026-07-02 contra el container greencode-devlake):
-    # el backend DevLake sirve la API en ROOT, no bajo /api. Es decir
-    # POST http://devlake:8080/plugins/webhook/connections/<id>/issues  -> 400/200
-    # POST http://devlake:8080/api/plugins/webhook/...                  -> 404
-    # Por eso hay que quitar el prefijo /api antes de proxyear. La version
-    # anterior (rewrite * /api/plugins/webhook{uri}) reintroducia /api -> 404,
-    # lo que dejaba el webhook publico roto (dora-deploy nunca registro deploys).
-    handle /api/plugins/webhook/* {
+    # Se usa un bloque `route` (orden de directivas EXPLICITO, sin el reordenamiento
+    # canonico de Caddy) y el strip se hace a nivel de route, NO dentro de un handle.
+    # Motivo (verificado 2026-07-03 via `caddy adapt`): si el rewrite del strip
+    # comparte subroute con un handler `authentication`, Caddy lo DROPEA — el route
+    # admin quedaba [authentication, reverse_proxy] SIN el strip, y /api/projects
+    # llegaba al backend como /api/projects -> 404. (Pasa con basic_auth dentro o
+    # afuera del handle, y con handle_path.) Con el strip afuera del auth, sobrevive.
+    route {
+        # 1) fuera de /api -> 404 informativo (sobre el path ORIGINAL, antes del strip)
+        @notapi not path /api/*
+        respond @notapi "DevLake API. Endpoints under /api/." 404
+
+        # 2) el backend sirve en root -> quitamos /api para todos los endpoints
         uri strip_prefix /api
-        reverse_proxy devlake:8080 {
-            header_up Host {host}
-            header_up X-Real-IP {remote_host}
+
+        # 3) webhook publico (ya sin /api): SIN auth. Sentry y dora-deploy postean aca.
+        #    Proteccion: connection-id secreto-por-oscuridad + HMAC opcional en Sentry.
+        handle /plugins/webhook/* {
+            reverse_proxy devlake:8080 {
+                header_up Host {host}
+                header_up X-Real-IP {remote_host}
+            }
         }
-    }
 
-    # ---------- 2) resto de la API DevLake: basic auth ----------
-    # El backend sirve en ROOT, no bajo /api
-    # (GET http://devlake:8080/projects -> 200 ; GET .../api/projects -> 404).
-    # Hay que strippear /api antes de proxyear.
-    #
-    # IMPORTANTE (verificado 2026-07-03 via `caddy adapt`): el basic_auth NO puede
-    # ir DENTRO del mismo `handle` que el strip. Caddy descarta el rewrite del
-    # subroute cuando hay un handler de authentication en el bloque — el subroute
-    # admin quedaba [authentication, reverse_proxy], SIN el strip, y /api/projects
-    # llegaba al backend como /api/projects -> 404. (Pasa igual con `uri strip_prefix`
-    # y con `handle_path`.) Por eso el basic_auth va AFUERA, como directiva con
-    # matcher (excluyendo el webhook), y el `handle` queda con solo
-    # [uri strip_prefix, reverse_proxy] — idéntico al bloque webhook que sí strippea.
-    @admin {
-        path /api/*
-        not path /api/plugins/webhook/*
-    }
-    basic_auth @admin {
-        {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
-    }
-    handle /api/* {
-        uri strip_prefix /api
+        # 4) resto de la API DevLake: basic auth + proxy a root
+        @admin not path /plugins/webhook/*
+        basic_auth @admin {
+            {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+        }
         reverse_proxy devlake:8080
-    }
-
-    # ---------- 3) cualquier otra cosa -> 404 ----------
-    # La raiz / del subdominio API no sirve nada utill.
-    handle {
-        respond "DevLake API. Endpoints under /api/." 404
     }
 
     header {

@@ -1,7 +1,7 @@
 # STATUS — Greencode Metrics
 
 > Documento vivo. Se sobrescribe entero cada sesión. La historia queda en `git log`.
-> Última actualización: **2026-07-01**.
+> Última actualización: **2026-07-03**.
 >
 > Orden de lectura sugerido para retomar contexto frío:
 > `CLAUDE.md` → `docs/CONVENTIONS.md` → este archivo (STATUS) → `docs/ROADMAP.md`.
@@ -30,14 +30,21 @@
   GitHub `elamonica/tallone`, history desde 2026-03-01). Elegido como piloto de la
   action `dora-deploy`.
 
-- **Piloto DORA en marcha** 🟡 — se instrumentaron los dos repos con la action
-  `dora-deploy@v1` (ver §"Piloto DORA — estado 2026-07-01"). Pendiente: mergear
-  los 2 PRs + confirmar el secret de pinvest + ver la primera entrada de Deploy
-  Frequency en Grafana.
+- **tallone: DORA completo** ✅ (2026-07-03) — Deploy Frequency cerrado end-to-end
+  (secret → conn 3 → deploy real HTTP 200 → contabilizado en `project_mapping`) +
+  CFR/MTTR ya vivo (39 incidents). Primer proyecto con DORA full. Lead Time aprox.
+  por el proxy `on: push` (ver §"Piloto DORA").
 
-- **Pendiente inmediato**: (a) cerrar el piloto DORA (mergear PRs, secret pinvest,
-  primer deploy verificado); (b) corregir el drift del stack prod (ver §"Drift
-  detectado 2026-07-01"). Ver `docs/ROADMAP.md` §"Bloqueante inmediato".
+- **Piloto DORA** 🟡 — los 2 PRs (tallone #34, pinvest #126) están mergeados.
+  Falta **pinvest**: se onboardeó (2026-07-01) ANTES de que el script automatizara
+  las connections DORA (commits `b918f1f`+`7294204`), así que NO tiene
+  `pinvest-deployments`/`pinvest-incidents` ni entry en el poller → **pinvest sigue
+  en cero de DORA**. Re-onboardear con el script actual lo deja listo.
+
+- **Pendiente inmediato**: (a) cerrar pinvest DORA (re-onboard con script actual +
+  entry en `sentry-poller/config.yml` + repo secret de deploy); (b) onboardear el
+  resto de proyectos (closeup, risk-monitor, idb-belize-dw); (c) corregir el drift
+  del stack prod (ver §"Drift detectado 2026-07-01"). Ver `docs/ROADMAP.md`.
 
 - **Etapas del roadmap original** (`CLAUDE.md`):
   - 1 (local) ✅ · 2 (piloto tallone) ✅ · 6 (deploy prod) ✅
@@ -171,11 +178,15 @@ fallback si el API público está caído (backend directo = sin `/api`). Runbook
 >   cicd_scope_id=pm.row_id AND pm.table='cicd_scopes' WHERE project_name='tallone...'`
 >   → **1 deploy** (SUCCESS/PRODUCTION). Grafana lo muestra.
 >
-> ⏳ **Falta para deploys reales de tallone**: actualizar el repo secret
-> `DEVLAKE_DEPLOY_WEBHOOK` de `elamonica/tallone` para que apunte a la connection 3:
-> `https://api.devlake.greencodesoftware.com/api/plugins/webhook/connections/3/deployments`
-> (hoy apunta a la connection 1 compartida, que ya no está mapeada a tallone). Lo
-> corre el dueño con `gh secret set` (el classifier bloquea valores de secret).
+> ✅ **CERRADO 2026-07-03 — deploys reales de tallone contabilizados end-to-end.**
+> Se actualizó el repo secret `DEVLAKE_DEPLOY_WEBHOOK` de `elamonica/tallone` a la
+> connection 3 (`.../webhook/connections/3/deployments`). Un push a `master` (empty
+> commit de prueba) disparó `dora-deploy@v1` → la action posteó y DevLake respondió
+> **HTTP 200** (log del run: `DevLake deploy notificado OK (HTTP 200)`, sin warning).
+> Verificado en MySQL prod: `cicd_deployment_commits JOIN project_mapping` da **1
+> deploy real** (`github-run-28667289768`, commit c8ee63d, SUCCESS/PRODUCTION,
+> 2026-07-03 14:36:40) atribuido a `tallone-sistema-de-gestion`. **tallone es el
+> primer proyecto con DORA completo** (Deploy Freq + CFR/MTTR).
 >
 > ⏳ **pinvest**: replicar (connection `pinvest-deployments` + blueprint + secret). Ideal:
 > **automatizar** la creación de la connection + `connections` del blueprint en

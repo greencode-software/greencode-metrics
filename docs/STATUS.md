@@ -35,16 +35,19 @@
   CFR/MTTR ya vivo (39 incidents). Primer proyecto con DORA full. Lead Time aprox.
   por el proxy `on: push` (ver §"Piloto DORA").
 
-- **Piloto DORA** 🟡 — los 2 PRs (tallone #34, pinvest #126) están mergeados.
-  Falta **pinvest**: se onboardeó (2026-07-01) ANTES de que el script automatizara
-  las connections DORA (commits `b918f1f`+`7294204`), así que NO tiene
-  `pinvest-deployments`/`pinvest-incidents` ni entry en el poller → **pinvest sigue
-  en cero de DORA**. Re-onboardear con el script actual lo deja listo.
+- **pinvest: DORA onboardeado** ✅ (2026-07-03) — Deploy Frequency **verificado**
+  (deploy real `bafe396` contabilizado vía `webhook:5`). CFR/MTTR: pipeline **live**
+  (poller poll-ea `pinvest-backend`+`pinvest-frontend` cada 30 min, 0 errores) pero
+  **0 incidents todavía** — Sentry devuelve 0 issues con `environment=production` +
+  `level:[error,fatal]` en 14d. Falta confirmar que el SDK setea `environment:
+  production` (causa probable del 0). Ver §"Piloto DORA — pinvest 2026-07-03".
 
-- **Pendiente inmediato**: (a) cerrar pinvest DORA (re-onboard con script actual +
-  entry en `sentry-poller/config.yml` + repo secret de deploy); (b) onboardear el
-  resto de proyectos (closeup, risk-monitor, idb-belize-dw); (c) corregir el drift
-  del stack prod (ver §"Drift detectado 2026-07-01"). Ver `docs/ROADMAP.md`.
+- **Pendiente inmediato**: (a) confirmar `environment=production` en el SDK de
+  pinvest para que fluyan los incidents; (b) onboardear el resto de proyectos
+  (closeup, risk-monitor, idb-belize-dw) — ahora self-service con el script
+  canónico; (c) corregir el drift del stack prod (ver §"Drift detectado 2026-07-01").
+  Ver `docs/ROADMAP.md`. Nota: la skill `setup-dora` del plugin GreenQA (0.4.1)
+  quedó **desactualizada** — ver §"Piloto DORA" (brief de fixes pasado a otra sesión).
 
 - **Etapas del roadmap original** (`CLAUDE.md`):
   - 1 (local) ✅ · 2 (piloto tallone) ✅ · 6 (deploy prod) ✅
@@ -245,6 +248,48 @@ Escalar a otros projects = onboard (crea `<project>-incidents`) + entrada en `co
 elamonica) — migrar a org token `sntrys_` con scopes `project:read`+`event:read`+`org:read`
 cuando se pueda. (b) **Rotar `ENCRYPTION_SECRET`**: quedó impreso en una terminal por un
 error de tooling durante esta sesión.
+
+---
+
+## Piloto DORA — pinvest 2026-07-03 (cierre + hallazgos plugin)
+
+pinvest se había onboardeado el 2026-07-01 **antes** de que el script canónico
+automatizara las webhook connections DORA, así que estaba en cero. Se cerró end-to-end:
+
+**Paso 0 — connections + blueprint (hecho vía SSH contra el API interno `127.0.0.1:8088`,
+sin basic auth, replicando 6b/6c/7 del script canónico):**
+- Creadas `pinvest-deployments` (**conn 5**) y `pinvest-incidents` (**conn 6**).
+- **Blueprint 1** (`pinvest-platform-Blueprint`) PATCHeado agregando ambos webhooks +
+  preservando github conn 1 y `timeAfter`. Tras trigger del pipeline 10, el
+  `project_mapping` tomó `webhook:5` y `webhook:6` → durable.
+
+- **Track A (Deploy Frequency): ✅ verificado.** Repo secret `DEVLAKE_DEPLOY_WEBHOOK`
+  de `greencode-software/pinvest` → conn 5. Push a `main` (empty commit `bafe396` vía
+  API) disparó `dora-deploy`, DevLake respondió **HTTP 200**, y el deploy quedó
+  atribuido a `pinvest-platform` (`webhook:5`, SUCCESS/PRODUCTION).
+
+- **Track B (CFR/MTTR): pipeline ✅, datos pendientes.** `config.yml` del poller sumó
+  `pinvest-backend` + `pinvest-frontend` (ambos → conn 6). Redeploy del poller en el
+  droplet (`git pull` + `docker compose up -d --build sentry-poller`). El ciclo de
+  arranque corrió **sin errores** pero `fetched:0` en ambos → Sentry no devuelve issues
+  con `environment=production`+`level:[error,fatal]` en 14d. **Pendiente**: confirmar
+  que el SDK de pinvest setea `environment: production` (causa probable del 0).
+
+> 🐞 **Bugs de tooling descubiertos en este cierre (para arreglar):**
+>
+> 1. **`GET /blueprints?projectName=X` NO filtra** — devuelve la lista completa
+>    ordenada por id desc. El script canónico usa `.blueprints[0]`, que para pinvest
+>    caía en el blueprint de **tallone** (id=2) → habría corrupto tallone. Hay que
+>    targetear el blueprint por **nombre/id explícito**, no por `.blueprints[0]`.
+>    Aplica a `scripts/onboard-github-project.sh` **y** a la copia del plugin.
+>
+> 2. **Skill `setup-dora` (plugin GreenQA 0.4.1) desactualizada.** El dogfooding mostró:
+>    (a) `onboard-dora.sh` es una **copia stale** del canónico — le faltan 6b/6c (no
+>    crea `<project>-deployments`/`-incidents`); (b) `setup-dora` sigue enseñando el
+>    modelo de **connection compartida** (el GAP 2 ya documentado como incorrecto) y
+>    manda a apuntar el secret ahí → deploys no contarían; (c) Sentry sigue marcado
+>    como "fase futura" pese a estar validado. Se pasó un **brief de fixes a otra
+>    sesión** (re-sync 6b/6c, modelo per-project, refrescar Sentry, guard anti-drift).
 
 ---
 

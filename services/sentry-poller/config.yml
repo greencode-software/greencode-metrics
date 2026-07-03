@@ -5,3 +5,11 @@ projects:
   - devlake_project: tallone-sistema-de-gestion
     sentry_project: tallone-prod
     incidents_connection_id: 4   # tallone-incidents (webhook conn 4), bindeada al blueprint 2
+  # pinvest tiene 2 Sentry projects (backend + frontend); ambos atribuyen incidents
+  # al mismo project DevLake via la misma webhook connection (pinvest-incidents=6).
+  - devlake_project: pinvest-platform
+    sentry_project: pinvest-backend
+    incidents_connection_id: 6   # pinvest-incidents (webhook conn 6), bindeada al blueprint 1
+  - devlake_project: pinvest-platform
+    sentry_project: pinvest-frontend
+    incidents_connection_id: 6   # pinvest-incidents (webhook conn 6), bindeada al blueprint 1
